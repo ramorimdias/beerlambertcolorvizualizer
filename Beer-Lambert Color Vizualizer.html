@@ -92,9 +92,29 @@
       font-weight: bold;
       margin-top: 0.5rem;
     }
+    body.dark-mode {
+      background: #000;
+      color: #fff;
+    }
+    body.dark-mode .panel {
+      background: #111;
+      color: #fff;
+    }
+    body.dark-mode .tabs {
+      background: #000;
+    }
+    body.dark-mode .tabs button {
+      background: #555;
+      color: #fff;
+    }
+    body.dark-mode .tabs button.active {
+      background: #fff;
+      color: #000;
+    }
   </style>
 </head>
 <body>
+  <button id="darkModeToggle" style="position:fixed;top:10px;right:10px;z-index:1000;">Dark Mode</button>
   <div id="app">
     <div id="tabs" class="tabs">
       <!-- Tabs will be inserted here dynamically -->
@@ -332,6 +352,56 @@
       }
       return diag;
     }
+    function renderAbsorbanceGraph(sampleId, paths_m, A_rows) {
+      const container = document.getElementById('absorbanceGraph-' + sampleId);
+      if (!container) return;
+      container.innerHTML = '';
+      const width = 400, height = 200, margin = 30;
+      const maxA = Math.max(...A_rows.flat(), 0.001);
+      const svgNS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(svgNS, 'svg');
+      svg.setAttribute('width', width);
+      svg.setAttribute('height', height);
+      svg.style.border = '1px solid #ccc';
+      const x0 = margin, y0 = height - margin;
+      const x1 = width - margin, y1 = margin;
+      const axisX = document.createElementNS(svgNS, 'line');
+      axisX.setAttribute('x1', x0); axisX.setAttribute('y1', y0);
+      axisX.setAttribute('x2', x1); axisX.setAttribute('y2', y0);
+      axisX.setAttribute('stroke', 'currentColor');
+      const axisY = document.createElementNS(svgNS, 'line');
+      axisY.setAttribute('x1', x0); axisY.setAttribute('y1', y0);
+      axisY.setAttribute('x2', x0); axisY.setAttribute('y2', y1);
+      axisY.setAttribute('stroke', 'currentColor');
+      svg.appendChild(axisX); svg.appendChild(axisY);
+      const colors = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#a65628','#f781bf','#999999'];
+      A_rows.forEach((row, idx) => {
+        const pts = row.map((val, j) => {
+          const x = x0 + (j / (wavelengths.length - 1)) * (width - 2*margin);
+          const y = y0 - (val / maxA) * (height - 2*margin);
+          return x + ',' + y;
+        }).join(' ');
+        const poly = document.createElementNS(svgNS, 'polyline');
+        poly.setAttribute('fill', 'none');
+        poly.setAttribute('stroke', colors[idx % colors.length]);
+        poly.setAttribute('stroke-width', '2');
+        poly.setAttribute('points', pts);
+        svg.appendChild(poly);
+      });
+      container.appendChild(svg);
+      const legend = document.createElement('div');
+      legend.style.display = 'flex';
+      legend.style.flexWrap = 'wrap';
+      legend.style.fontSize = '0.8rem';
+      legend.style.marginTop = '0.3rem';
+      paths_m.forEach((p, idx) => {
+        const item = document.createElement('div');
+        const color = colors[idx % colors.length];
+        item.innerHTML = '<span class="circle" style="background:' + color + '"></span>' + (p*1000).toFixed(0) + ' mm';
+        legend.appendChild(item);
+      });
+      container.appendChild(legend);
+    }
     // Render results for a specific sample
     function updateUIForSample(sampleId, colourData) {
       const stripDiv = document.getElementById('colorStrip-' + sampleId);
@@ -401,14 +471,24 @@
     }
     // Perform computation for a specific sample
     function computeResultsForSample(sampleId) {
-      const inputText = document.getElementById('dataInput-' + sampleId).value;
+      let inputText = document.getElementById('dataInput-' + sampleId).value;
       const unit = document.getElementById('unitSelect-' + sampleId).value;
       const dec = document.getElementById('decimalSelect-' + sampleId).value;
       const clampNeg = document.getElementById('clampNeg-' + sampleId).checked;
       const baselineCorr = document.getElementById('baselineCorr-' + sampleId).checked;
       const forceOrigin = document.getElementById('forceOrigin-' + sampleId).checked;
       const errorDiv = document.getElementById('error-' + sampleId);
+      const name = document.getElementById('sampleName-' + sampleId).value.trim();
+      const tabBtn = document.getElementById('tab-' + sampleId);
+      if (name) tabBtn.textContent = name; else tabBtn.textContent = 'Sample ' + (sampleId + 1);
+      document.getElementById('sampleNameDisplay-' + sampleId).textContent = name ? 'Sample name: ' + name : '';
       errorDiv.textContent = '';
+      if (!/path/i.test(inputText.split(/\r?\n/)[0])) {
+        const lines = inputText.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+        const conv = lines.map(l => l.trim().split(/[\s;]+/).join('\t')).join('\n');
+        inputText = 'Path_mm\t' + wavelengths.join('\t') + '\n' + conv;
+        document.getElementById('dataInput-' + sampleId).value = inputText;
+      }
       try {
         const { paths_m, A_rows } = parseInput(inputText, unit, dec);
         // Baseline correction & clamping
@@ -495,7 +575,8 @@
           results: colourData.results.map(r => ({ depth_m: r.depth_m, X: r.X, Y: r.Y, Z: r.Z, L: r.L, a: r.a, b: r.b, srgb: [Math.round(r.rgb[0]*255), Math.round(r.rgb[1]*255), Math.round(r.rgb[2]*255)] })),
           linearity: diag,
           details: null,
-          reference: (refChoice === 'c2' ? 'C/2°' : 'D65/10°')
+          reference: (refChoice === 'c2' ? 'C/2°' : 'D65/10°'),
+          sampleName: name
         };
         // Build details summary
         let detailsHTML = '';
@@ -532,12 +613,15 @@
         });
         detailsHTML += '</ul>';
         internalDataMap[sampleId].details = detailsHTML;
+        renderAbsorbanceGraph(sampleId, paths_m, processedRows);
         updateUIForSample(sampleId, colourData);
         document.getElementById('exportBtn-' + sampleId).disabled = false;
       } catch (err) {
         errorDiv.textContent = err.message;
         internalDataMap[sampleId] = null;
         document.getElementById('exportBtn-' + sampleId).disabled = true;
+        document.getElementById('absorbanceGraph-' + sampleId).innerHTML = '';
+        document.getElementById('sampleNameDisplay-' + sampleId).textContent = '';
         updateUIForSample(sampleId, null);
       }
     }
@@ -574,7 +658,8 @@
         <div class="container">
           <div class="panel">
             <h2>Input</h2>
-            <textarea id="dataInput-${id}" placeholder="Paste tab/semicolon/comma-separated data here...\nHeader must include Path_mm or Path_cm and 400,410,...,700 columns."></textarea>
+            <label>Sample name: <input type="text" id="sampleName-${id}"></label>
+            <textarea id="dataInput-${id}" placeholder="Paste rows: path length (mm) followed by absorbances 400–700 nm."></textarea>
             <label>Units:
               <select id="unitSelect-${id}">
                 <option value="mm">mm</option>
@@ -584,7 +669,7 @@
             <label>Decimal separator:
               <select id="decimalSelect-${id}">
                 <option value=".">Dot (.)</option>
-                <option value=",">Comma (,)</option>
+                <option value="," selected>Comma (,)</option>
               </select>
             </label>
             <label><input type="checkbox" id="clampNeg-${id}" checked> Clamp negatives to 0</label>
@@ -593,7 +678,7 @@
             <label>Color reference:
               <select id="colorRefSelect-${id}">
                 <option value="d65">D65 / 10°</option>
-                <option value="c2">C / 2°</option>
+                <option value="c2" selected>C / 2°</option>
               </select>
             </label>
             <button id="computeBtn-${id}">Compute</button>
@@ -602,8 +687,10 @@
           </div>
           <div class="panel">
             <h2>Results</h2>
+            <div id="sampleNameDisplay-${id}" style="font-weight:bold;margin-bottom:0.5rem;"></div>
             <div id="notice-${id}" style="color:#888;margin-bottom:0.5rem;"></div>
             <div id="colorStrip-${id}"></div>
+            <div id="absorbanceGraph-${id}" style="margin-top:0.5rem;"></div>
             <div id="calcDetails-${id}" style="margin-top:0.5rem;font-size:0.9rem;"></div>
             <div id="linearityWidget-${id}" style="margin-top:0.5rem;"></div>
           </div>
@@ -636,6 +723,9 @@
       addBtn.className = 'add';
       addBtn.addEventListener('click', addSample);
       tabsDiv.appendChild(addBtn);
+      document.getElementById('darkModeToggle').addEventListener('click', () => {
+        document.body.classList.toggle('dark-mode');
+      });
       // Create first sample
       addSample();
     }
