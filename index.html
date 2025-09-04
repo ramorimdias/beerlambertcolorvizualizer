@@ -72,8 +72,9 @@
       gap: 0.5rem;
     }
     .swatch {
-      flex: 1 1 80px;
-      min-width: 80px;
+      flex: 0 0 120px;
+      width: 120px;
+      height: 120px;
       text-align: center;
       padding: 0.3rem;
       border-radius: 4px;
@@ -113,6 +114,17 @@
     const yBar = [0.0020044,0.008756,0.021391,0.038676,0.062077,0.089456,0.128201,0.18519,0.253589,0.339133,0.460777,0.606741,0.761757,0.875211,0.961988,0.991761,0.99734,0.955552,0.868934,0.777405,0.658341,0.527963,0.398057,0.283493,0.179828,0.107633,0.060281,0.0318004,0.0159051,0.0077488,0.00371774];
     const zBar = [0.0860109,0.389366,0.972542,1.55348,1.96728,1.9948,1.74537,1.31756,0.772125,0.415254,0.218502,0.112044,0.060709,0.030451,0.013676,0.003988,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     const sd65 = [82.7549,91.486,93.4318,86.6823,104.865,117.008,117.812,114.861,115.923,108.811,109.354,107.802,104.79,107.689,104.405,104.046,100.0,96.3342,95.788,88.6856,90.0062,89.5991,87.6987,83.2886,83.6992,80.0268,80.2146,82.2778,78.2842,69.7213,71.6091];
+
+    /*
+     * CIE 1931 2° colour matching functions and CIE Illuminant C SPD.
+     * Values sampled at 10 nm from 400 to 700 nm.
+     * z̄ values above 630 nm are set to small or zero according to published data.
+     * Illuminant C values sourced from CIE standard tables.
+     */
+    const xBar2 = [0.01431,0.04351,0.13438,0.2839,0.34828,0.3362,0.2908,0.19536,0.09564,0.03201,0.0049,0.0093,0.06327,0.1655,0.2904,0.4334499,0.5945,0.7621,0.9163,1.0263,1.0622,1.0026,0.8544499,0.6424,0.4479,0.2835,0.1649,0.0874,0.04677,0.0227,0.01135916];
+    const yBar2 = [0.000396,0.00121,0.004,0.0116,0.023,0.038,0.06,0.09098,0.13902,0.20802,0.323,0.503,0.71,0.862,0.954,0.9949501,0.995,0.952,0.87,0.757,0.631,0.503,0.381,0.265,0.175,0.107,0.061,0.032,0.017,0.00821,0.004102];
+    const zBar2 = [0.06785001,0.2074,0.6456,1.3856,1.74706,1.77211,1.6692,1.28764,0.8129501,0.46518,0.272,0.1582,0.07824999,0.04216,0.0203,0.008749999,0.0039,0.0021,0.001650001,0.0011,0.0008,0.00034,0.00019,0.00005,0.00002,0,0,0,0,0,0];
+    const sc = [63.3,80.6,98.1,112.4,121.5,124.0,123.1,123.8,123.9,120.7,112.1,102.3,96.9,98.0,102.1,105.2,105.3,102.3,97.8,93.2,89.7,88.4,88.1,88.0,87.8,88.2,87.9,86.3,84.0,80.2,76.3];
     // Map of sample ID to computed data and details
     const internalDataMap = {};
     let sampleCounter = 0;
@@ -230,29 +242,34 @@
       return { slope: slopeLS, intercept: interceptLS, r2: r2, slopeOrigin: slopeOrigin };
     }
     // Compute colours and Lab for each depth
-    function computeColours(slopeArr, interceptArr, depths, forceOriginArr) {
-      const results=[];
+    function computeColours(slopeArr, interceptArr, depths, forceOriginArr, ref) {
+      // ref defines {spd, xBar, yBar, zBar}; fall back to D65/10° if not provided
+      const spd = (ref && ref.spd) || sd65;
+      const xArr = (ref && ref.xBar) || xBar;
+      const yArr = (ref && ref.yBar) || yBar;
+      const zArr = (ref && ref.zBar) || zBar;
+      const results = [];
       const deltaLambda = 10;
       // Compute normalisation constant k
       let denom = 0;
-      for (let i=0;i<wavelengths.length;i++) {
-        denom += sd65[i] * yBar[i];
+      for (let i = 0; i < wavelengths.length; i++) {
+        denom += spd[i] * yArr[i];
       }
       const k = 100 / (denom * deltaLambda);
       // Compute reference white XYZ (T=1) for relative Lab
-      let Xn=0, Yn=0, Zn=0;
-      for (let i=0;i<wavelengths.length;i++) {
-        Xn += sd65[i] * xBar[i];
-        Yn += sd65[i] * yBar[i];
-        Zn += sd65[i] * zBar[i];
+      let Xn = 0, Yn = 0, Zn = 0;
+      for (let i = 0; i < wavelengths.length; i++) {
+        Xn += spd[i] * xArr[i];
+        Yn += spd[i] * yArr[i];
+        Zn += spd[i] * zArr[i];
       }
       Xn *= k * deltaLambda;
       Yn *= k * deltaLambda;
       Zn *= k * deltaLambda;
       for (const d of depths) {
         // Build transmittance spectrum at depth d
-        const T=[];
-        for (let i=0;i<wavelengths.length;i++) {
+        const T = [];
+        for (let i = 0; i < wavelengths.length; i++) {
           const s = slopeArr[i];
           const b = interceptArr[i];
           const useB = forceOriginArr[i] ? 0 : b;
@@ -261,18 +278,22 @@
           T.push(Td);
         }
         // Integrate XYZ
-        let X=0,Y=0,Z=0;
-        for (let i=0;i<wavelengths.length;i++) {
+        let X = 0, Y = 0, Z = 0;
+        for (let i = 0; i < wavelengths.length; i++) {
           const Td = T[i];
-          X += sd65[i] * xBar[i] * Td;
-          Y += sd65[i] * yBar[i] * Td;
-          Z += sd65[i] * zBar[i] * Td;
+          X += spd[i] * xArr[i] * Td;
+          Y += spd[i] * yArr[i] * Td;
+          Z += spd[i] * zArr[i] * Td;
         }
         X *= k * deltaLambda;
         Y *= k * deltaLambda;
         Z *= k * deltaLambda;
         // Convert to Lab
-        function f(t) { const eps = 216/24389; const kappa = 24389/27; return t > eps ? Math.cbrt(t) : (kappa * t + 16) / 116; }
+        function f(t) {
+          const eps = 216 / 24389;
+          const kappa = 24389 / 27;
+          return t > eps ? Math.cbrt(t) : (kappa * t + 16) / 116;
+        }
         const xr = X / Xn;
         const yr = Y / Yn;
         const zr = Z / Zn;
@@ -281,22 +302,24 @@
         const fz = f(zr);
         const L = 116 * fy - 16;
         const a = 500 * (fx - fy);
-        const b = 200 * (fy - fz);
+        const bVal = 200 * (fy - fz);
         // Convert to sRGB
         const Xnorm = X / 100;
         const Ynorm = Y / 100;
         const Znorm = Z / 100;
-        let rLin =  3.2406 * Xnorm - 1.5372 * Ynorm - 0.4986 * Znorm;
+        let rLin = 3.2406 * Xnorm - 1.5372 * Ynorm - 0.4986 * Znorm;
         let gLin = -0.9689 * Xnorm + 1.8758 * Ynorm + 0.0415 * Znorm;
-        let bLin =  0.0557 * Xnorm - 0.2040 * Ynorm + 1.0570 * Znorm;
-        function gammaCorrect(u) { return u <= 0.0031308 ? 12.92 * u : 1.055 * Math.pow(u, 1 / 2.4) - 0.055; }
+        let bLin = 0.0557 * Xnorm - 0.2040 * Ynorm + 1.0570 * Znorm;
+        function gammaCorrect(u) {
+          return u <= 0.0031308 ? 12.92 * u : 1.055 * Math.pow(u, 1 / 2.4) - 0.055;
+        }
         let r = gammaCorrect(rLin);
         let g = gammaCorrect(gLin);
         let bb = gammaCorrect(bLin);
         r = Math.min(Math.max(r, 0), 1);
         g = Math.min(Math.max(g, 0), 1);
         bb = Math.min(Math.max(bb, 0), 1);
-        results.push({ depth_m: d, X, Y, Z, L, a, b, rgb: [r, g, bb] });
+        results.push({ depth_m: d, X, Y, Z, L, a, b: bVal, rgb: [r, g, bb] });
       }
       return { Xn, Yn, Zn, k, results };
     }
@@ -443,8 +466,19 @@
           if (!depths.includes(val)) depths.push(val);
         }
         depths.sort((a,b) => a - b);
+        // Determine colour reference (D65/10° or C/2°)
+        let refChoice = 'd65';
+        const refSel = document.getElementById('colorRefSelect-' + sampleId);
+        if (refSel) refChoice = refSel.value;
+        let refObj;
+        if (refChoice === 'c2') {
+          refObj = { spd: sc, xBar: xBar2, yBar: yBar2, zBar: zBar2 };
+        } else {
+          // default to D65/10°
+          refObj = { spd: sd65, xBar: xBar, yBar: yBar, zBar: zBar };
+        }
         // Compute colours and linearity
-        const colourData = computeColours(slopes, intercepts, depths, forceOriginArr);
+        const colourData = computeColours(slopes, intercepts, depths, forceOriginArr, refObj);
         const diag = computeLinearityDiagnostics(
           slopes.map((s,i) => ({ slope: s, intercept: intercepts[i], r2: r2s[i] })),
           [5, 10, 16] // indices correspond to 450, 500, 560 nm
@@ -460,7 +494,8 @@
           depths_m: depths.slice(),
           results: colourData.results.map(r => ({ depth_m: r.depth_m, X: r.X, Y: r.Y, Z: r.Z, L: r.L, a: r.a, b: r.b, srgb: [Math.round(r.rgb[0]*255), Math.round(r.rgb[1]*255), Math.round(r.rgb[2]*255)] })),
           linearity: diag,
-          details: null
+          details: null,
+          reference: (refChoice === 'c2' ? 'C/2°' : 'D65/10°')
         };
         // Build details summary
         let detailsHTML = '';
@@ -480,7 +515,12 @@
         detailsHTML += '. Slopes and intercepts computed.</li>';
         detailsHTML += '<li>Absorbance extrapolated to depths: ' + depths.map(d => (d * 100).toFixed(0) + 'cm').join(', ') + '</li>';
         detailsHTML += '<li>Transmittance calculated as T=10^(-A).</li>';
-        detailsHTML += '<li>XYZ values integrated with CIE 1964 10° functions and D65 SPD.</li>';
+        // Add note on colour reference
+        if (refChoice === 'c2') {
+          detailsHTML += '<li>XYZ values integrated with CIE 1931 2° functions and Illuminant C SPD.</li>';
+        } else {
+          detailsHTML += '<li>XYZ values integrated with CIE 1964 10° functions and D65 SPD.</li>';
+        }
         detailsHTML += '<li>Converted to L*a*b* and sRGB for display.</li>';
         detailsHTML += '</ul>';
         detailsHTML += '<strong>Line fit diagnostics (selected λ)</strong><ul>';
@@ -549,7 +589,13 @@
             </label>
             <label><input type="checkbox" id="clampNeg-${id}" checked> Clamp negatives to 0</label>
             <label><input type="checkbox" id="baselineCorr-${id}"> Baseline correction 650–700 nm</label>
-            <label><input type="checkbox" id="forceOrigin-${id}"> Force through origin</label>
+            <label><input type="checkbox" id="forceOrigin-${id}"> Force through origin</label><br>
+            <label>Color reference:
+              <select id="colorRefSelect-${id}">
+                <option value="d65">D65 / 10°</option>
+                <option value="c2">C / 2°</option>
+              </select>
+            </label>
             <button id="computeBtn-${id}">Compute</button>
             <button id="exportBtn-${id}" disabled>Export JSON</button>
             <div id="error-${id}" class="error"></div>
