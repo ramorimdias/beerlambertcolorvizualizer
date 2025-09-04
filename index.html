@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Beer–Lambert Color Visualizer</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      background: #f9f9f9;
+      color: #333;
+    }
+    /* Tab bar styling */
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      background: #333;
+      padding: 0.5rem;
+      color: #fff;
+    }
+    .tabs button {
+      margin-right: 0.5rem;
+      padding: 0.3rem 0.6rem;
+      border: none;
+      border-radius: 4px 4px 0 0;
+      background: #555;
+      color: #fff;
+      cursor: pointer;
+    }
+    .tabs button.active {
+      background: #fff;
+      color: #333;
+      font-weight: bold;
+    }
+    .tabs button.add {
+      background: #007acc;
+      color: #fff;
+      margin-left: auto;
+      border-radius: 4px;
+    }
+    .sample {
+      display: none;
+    }
+    .sample.active {
+      display: block;
+    }
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      padding: 1rem;
+    }
+    .panel {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 1rem;
+      overflow-y: auto;
+      max-height: 80vh;
+    }
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      resize: vertical;
+      padding: 0.5rem;
+      font-family: monospace;
+    }
+    .swatch-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .swatch {
+      flex: 1 1 80px;
+      min-width: 80px;
+      text-align: center;
+      padding: 0.3rem;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    .circle {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 0.3rem;
+    }
+    .error {
+      color: red;
+      font-weight: bold;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="tabs" class="tabs">
+      <!-- Tabs will be inserted here dynamically -->
+    </div>
+    <div id="samples">
+      <!-- Sample panels will be inserted here dynamically -->
+    </div>
+  </div>
+  <script>
+    /*
+     * CIE 1964 10° colour matching functions and D65 SPD.
+     * Values sampled at 10 nm from 400 to 700 nm.
+     * z̄ values above 559 nm are set to zero.
+     */
+    const wavelengths = [400,410,420,430,440,450,460,470,480,490,500,510,520,530,540,550,560,570,580,590,600,610,620,630,640,650,660,670,680,690,700];
+    const xBar = [0.0191097,0.084736,0.204492,0.314679,0.383734,0.370702,0.302273,0.195618,0.080507,0.016172,0.003816,0.037465,0.117749,0.236491,0.376772,0.529826,0.705224,0.878655,1.01416,1.11852,1.12399,1.03048,0.856297,0.647467,0.431567,0.268329,0.152568,0.0812606,0.0408508,0.0199413,0.00957688];
+    const yBar = [0.0020044,0.008756,0.021391,0.038676,0.062077,0.089456,0.128201,0.18519,0.253589,0.339133,0.460777,0.606741,0.761757,0.875211,0.961988,0.991761,0.99734,0.955552,0.868934,0.777405,0.658341,0.527963,0.398057,0.283493,0.179828,0.107633,0.060281,0.0318004,0.0159051,0.0077488,0.00371774];
+    const zBar = [0.0860109,0.389366,0.972542,1.55348,1.96728,1.9948,1.74537,1.31756,0.772125,0.415254,0.218502,0.112044,0.060709,0.030451,0.013676,0.003988,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    const sd65 = [82.7549,91.486,93.4318,86.6823,104.865,117.008,117.812,114.861,115.923,108.811,109.354,107.802,104.79,107.689,104.405,104.046,100.0,96.3342,95.788,88.6856,90.0062,89.5991,87.6987,83.2886,83.6992,80.0268,80.2146,82.2778,78.2842,69.7213,71.6091];
+    // Map of sample ID to computed data and details
+    const internalDataMap = {};
+    let sampleCounter = 0;
+    // Helper: median of numeric array
+    function median(values) {
+      if (!values.length) return 0;
+      const sorted = values.slice().sort((a,b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0 ? (sorted[mid-1] + sorted[mid]) / 2 : sorted[mid];
+    }
+    // Parse raw input text into data arrays; decimalSep = '.' or ','
+    function parseInput(raw, unit, decimalSep) {
+      const lines = raw.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+      if (lines.length < 2) throw new Error('Not enough data rows. Include at least header and one data row.');
+      const headerLine = lines[0];
+      // Candidate delimiters; skip comma when comma is decimal separator
+      // Candidate delimiters (tab, semicolon, comma, space). Comma is removed when decimalSep is comma.
+      const candidates = ['\t',';',' ',','];
+      let chosenDelim = '\t';
+      let maxTokens = 0;
+      candidates.forEach(delim => {
+        if (decimalSep === ',' && delim === ',') return;
+        const tokens = headerLine.split(delim).filter(t => t.trim().length > 0);
+        if (tokens.length > maxTokens) {
+          maxTokens = tokens.length;
+          chosenDelim = delim;
+        }
+      });
+      if (maxTokens < 2) chosenDelim = /\s+/;
+      const headerTokens = headerLine.split(chosenDelim).map(s => s.trim());
+      const lambdaMap = {};
+      let pathIndex = -1;
+      let pathUnitFromHeader = null;
+      headerTokens.forEach((cell, idx) => {
+        const lc = cell.toLowerCase().replace(/\s+/g, '').replace(/_/g, '').replace(/\*/g, '');
+        const numeric = parseInt(lc, 10);
+        if (!isNaN(numeric) && wavelengths.includes(numeric)) {
+          lambdaMap[numeric] = idx;
+        } else if (lc.includes('path')) {
+          pathIndex = idx;
+          if (lc.includes('mm')) pathUnitFromHeader = 'mm';
+          else if (lc.includes('cm')) pathUnitFromHeader = 'cm';
+        }
+      });
+      if (pathIndex < 0) throw new Error('Could not find a path length column. Include Path_mm or Path_cm column.');
+      for (const wl of wavelengths) {
+        if (!(wl in lambdaMap)) throw new Error('Missing column for wavelength ' + wl + ' nm');
+      }
+      let finalUnit = unit;
+      if (pathUnitFromHeader) finalUnit = pathUnitFromHeader;
+      const paths_m = [];
+      const A_rows = [];
+      for (let i=1; i<lines.length; i++) {
+        const tokens = lines[i].split(chosenDelim).map(s => s.trim());
+        if (!tokens[pathIndex] || tokens[pathIndex] === '') continue;
+        let pStr = tokens[pathIndex].replace(/\s+/g, '');
+        if (decimalSep === ',') pStr = pStr.replace(',', '.');
+        let pathValue = parseFloat(pStr);
+        if (isNaN(pathValue)) continue;
+        let mVal;
+        if (finalUnit === 'mm') mVal = pathValue / 1000;
+        else if (finalUnit === 'cm') mVal = pathValue / 100;
+        else mVal = pathValue;
+        const rowA = wavelengths.map(wl => {
+          let valStr = tokens[lambdaMap[wl]];
+          valStr = valStr ? valStr.trim() : '';
+          if (decimalSep === ',') valStr = valStr.replace(',', '.');
+          const val = parseFloat(valStr);
+          return isNaN(val) ? 0 : val;
+        });
+        paths_m.push(mVal);
+        A_rows.push(rowA);
+      }
+      if (paths_m.length < 1) throw new Error('No valid data rows found.');
+      return { paths_m, A_rows };
+    }
+    // Fit a line y = s*x + b using least squares; also compute slope through origin and R²
+    function fitLine(yValues, xValues) {
+      const n = yValues.length;
+      if (n === 1) {
+        const s = yValues[0] / xValues[0];
+        return { slope: s, intercept: 0, r2: 1, slopeOrigin: s };
+      }
+      let sumX=0,sumY=0,sumXX=0,sumXY=0;
+      for (let i=0;i<n;i++) {
+        const x = xValues[i];
+        const y = yValues[i];
+        sumX += x;
+        sumY += y;
+        sumXX += x*x;
+        sumXY += x*y;
+      }
+      const denom = n * sumXX - sumX * sumX;
+      let slopeLS = 0;
+      let interceptLS = 0;
+      if (Math.abs(denom) > 1e-12) {
+        slopeLS = (n * sumXY - sumX * sumY) / denom;
+        interceptLS = (sumY * sumXX - sumX * sumXY) / denom;
+      }
+      let numO=0, denO=0;
+      for (let i=0;i<n;i++) {
+        numO += xValues[i] * yValues[i];
+        denO += xValues[i] * xValues[i];
+      }
+      const slopeOrigin = denO !== 0 ? numO / denO : 0;
+      let ssRes=0, ssTot=0;
+      const meanY = sumY / n;
+      for (let i=0;i<n;i++) {
+        const y = yValues[i];
+        const yPred = slopeLS * xValues[i] + interceptLS;
+        ssRes += (y - yPred) * (y - yPred);
+        ssTot += (y - meanY) * (y - meanY);
+      }
+      const r2 = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
+      return { slope: slopeLS, intercept: interceptLS, r2: r2, slopeOrigin: slopeOrigin };
+    }
+    // Compute colours and Lab for each depth
+    function computeColours(slopeArr, interceptArr, depths, forceOriginArr) {
+      const results=[];
+      const deltaLambda = 10;
+      // Compute normalisation constant k
+      let denom = 0;
+      for (let i=0;i<wavelengths.length;i++) {
+        denom += sd65[i] * yBar[i];
+      }
+      const k = 100 / (denom * deltaLambda);
+      // Compute reference white XYZ (T=1) for relative Lab
+      let Xn=0, Yn=0, Zn=0;
+      for (let i=0;i<wavelengths.length;i++) {
+        Xn += sd65[i] * xBar[i];
+        Yn += sd65[i] * yBar[i];
+        Zn += sd65[i] * zBar[i];
+      }
+      Xn *= k * deltaLambda;
+      Yn *= k * deltaLambda;
+      Zn *= k * deltaLambda;
+      for (const d of depths) {
+        // Build transmittance spectrum at depth d
+        const T=[];
+        for (let i=0;i<wavelengths.length;i++) {
+          const s = slopeArr[i];
+          const b = interceptArr[i];
+          const useB = forceOriginArr[i] ? 0 : b;
+          const Ad = s * d + useB;
+          const Td = Math.pow(10, -Ad);
+          T.push(Td);
+        }
+        // Integrate XYZ
+        let X=0,Y=0,Z=0;
+        for (let i=0;i<wavelengths.length;i++) {
+          const Td = T[i];
+          X += sd65[i] * xBar[i] * Td;
+          Y += sd65[i] * yBar[i] * Td;
+          Z += sd65[i] * zBar[i] * Td;
+        }
+        X *= k * deltaLambda;
+        Y *= k * deltaLambda;
+        Z *= k * deltaLambda;
+        // Convert to Lab
+        function f(t) { const eps = 216/24389; const kappa = 24389/27; return t > eps ? Math.cbrt(t) : (kappa * t + 16) / 116; }
+        const xr = X / Xn;
+        const yr = Y / Yn;
+        const zr = Z / Zn;
+        const fx = f(xr);
+        const fy = f(yr);
+        const fz = f(zr);
+        const L = 116 * fy - 16;
+        const a = 500 * (fx - fy);
+        const b = 200 * (fy - fz);
+        // Convert to sRGB
+        const Xnorm = X / 100;
+        const Ynorm = Y / 100;
+        const Znorm = Z / 100;
+        let rLin =  3.2406 * Xnorm - 1.5372 * Ynorm - 0.4986 * Znorm;
+        let gLin = -0.9689 * Xnorm + 1.8758 * Ynorm + 0.0415 * Znorm;
+        let bLin =  0.0557 * Xnorm - 0.2040 * Ynorm + 1.0570 * Znorm;
+        function gammaCorrect(u) { return u <= 0.0031308 ? 12.92 * u : 1.055 * Math.pow(u, 1 / 2.4) - 0.055; }
+        let r = gammaCorrect(rLin);
+        let g = gammaCorrect(gLin);
+        let bb = gammaCorrect(bLin);
+        r = Math.min(Math.max(r, 0), 1);
+        g = Math.min(Math.max(g, 0), 1);
+        bb = Math.min(Math.max(bb, 0), 1);
+        results.push({ depth_m: d, X, Y, Z, L, a, b, rgb: [r, g, bb] });
+      }
+      return { Xn, Yn, Zn, k, results };
+    }
+    // Compute linearity diagnostics at selected wavelengths
+    function computeLinearityDiagnostics(fits, lambdaIndices) {
+      const diag = {};
+      for (const idx of lambdaIndices) {
+        const fit = fits[idx];
+        diag[wavelengths[idx]] = { R2: fit.r2, intercept: fit.intercept };
+      }
+      return diag;
+    }
+    // Render results for a specific sample
+    function updateUIForSample(sampleId, colourData) {
+      const stripDiv = document.getElementById('colorStrip-' + sampleId);
+      const linearityDiv = document.getElementById('linearityWidget-' + sampleId);
+      const noticeDiv = document.getElementById('notice-' + sampleId);
+      const detailsDiv = document.getElementById('calcDetails-' + sampleId);
+      // Clear previous content
+      stripDiv.innerHTML = '';
+      linearityDiv.innerHTML = '';
+      noticeDiv.textContent = '';
+      detailsDiv.innerHTML = '';
+      if (!colourData || !colourData.results) return;
+      // Build colour swatches
+      const swatchContainer = document.createElement('div');
+      swatchContainer.className = 'swatch-container';
+      colourData.results.forEach(res => {
+        const div = document.createElement('div');
+        div.className = 'swatch';
+        const depthCm = (res.depth_m * 100).toFixed(0);
+        const Lval = res.L.toFixed(1);
+        const aval = res.a.toFixed(1);
+        const bval = res.b.toFixed(1);
+        const Yperc = res.Y.toFixed(1);
+        const [r, g, b] = res.rgb;
+        const textColor = (res.Y / 100) > 0.5 ? '#000' : '#fff';
+        div.style.backgroundColor = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+        div.style.color = textColor;
+        div.innerHTML = `<strong>${depthCm}&nbsp;cm</strong><br>L* ${Lval}<br>a* ${aval}<br>b* ${bval}<br>Y ${Yperc}%`;
+        swatchContainer.appendChild(div);
+      });
+      stripDiv.appendChild(swatchContainer);
+      // Build linearity widget
+      const diag = colourData.linearity;
+      const wavelengthsToShow = [450, 500, 560];
+      const legend = document.createElement('div');
+      legend.textContent = 'Linearity (R² / b)';
+      linearityDiv.appendChild(legend);
+      wavelengthsToShow.forEach(wl => {
+        const entry = diag[wl];
+        const span = document.createElement('span');
+        // Determine indicator colour
+        let colour;
+        if (!entry) colour = '#666';
+        else {
+          const r2 = entry.R2;
+          const bInt = Math.abs(entry.intercept);
+          if (r2 > 0.99 && bInt < 0.002) colour = 'green';
+          else if (r2 > 0.95 && bInt < 0.01) colour = 'orange';
+          else colour = 'red';
+        }
+        const dot = document.createElement('span');
+        dot.className = 'circle';
+        dot.style.backgroundColor = colour;
+        span.appendChild(dot);
+        span.appendChild(document.createTextNode(wl + ' nm '));
+        linearityDiv.appendChild(span);
+      });
+      // Notice for single-row data
+      const sampleData = internalDataMap[sampleId];
+      if (sampleData && sampleData.paths_m && sampleData.paths_m.length === 1) {
+        noticeDiv.textContent = 'Assuming strict Beer–Lambert linearity (through origin).';
+      }
+      // Display step-by-step details if available
+      if (sampleData && sampleData.details) {
+        detailsDiv.innerHTML = sampleData.details;
+      }
+    }
+    // Perform computation for a specific sample
+    function computeResultsForSample(sampleId) {
+      const inputText = document.getElementById('dataInput-' + sampleId).value;
+      const unit = document.getElementById('unitSelect-' + sampleId).value;
+      const dec = document.getElementById('decimalSelect-' + sampleId).value;
+      const clampNeg = document.getElementById('clampNeg-' + sampleId).checked;
+      const baselineCorr = document.getElementById('baselineCorr-' + sampleId).checked;
+      const forceOrigin = document.getElementById('forceOrigin-' + sampleId).checked;
+      const errorDiv = document.getElementById('error-' + sampleId);
+      errorDiv.textContent = '';
+      try {
+        const { paths_m, A_rows } = parseInput(inputText, unit, dec);
+        // Baseline correction & clamping
+        const processedRows = [];
+        const baselineMeds = [];
+        for (let i=0; i<A_rows.length; i++) {
+          const row = A_rows[i].slice();
+          if (baselineCorr) {
+            const tail = [];
+            for (let j=0; j<wavelengths.length; j++) {
+              if (wavelengths[j] >= 650) tail.push(row[j]);
+            }
+            const med = median(tail);
+            baselineMeds.push(med);
+            for (let j=0; j<row.length; j++) {
+              row[j] = row[j] - med;
+            }
+          }
+          if (clampNeg) {
+            for (let j=0; j<row.length; j++) {
+              if (row[j] < 0) row[j] = 0;
+            }
+          }
+          processedRows.push(row);
+        }
+        // Fit slopes and intercepts per wavelength
+        const slopes = [];
+        const intercepts = [];
+        const r2s = [];
+        const forceOriginArr = [];
+        for (let i=0; i<wavelengths.length; i++) {
+          const yVals = processedRows.map(r => r[i]);
+          const fit = fitLine(yVals, paths_m);
+          let s = fit.slope;
+          let b = fit.intercept;
+          let originFlag = false;
+          if (forceOrigin || Math.abs(fit.intercept) < 0.002) {
+            s = fit.slopeOrigin;
+            b = 0;
+            originFlag = true;
+          }
+          slopes[i] = s;
+          intercepts[i] = b;
+          r2s[i] = fit.r2;
+          forceOriginArr[i] = originFlag;
+        }
+        // Depths: 0 m, 0.033 m, 0.05 m, 0.1 m, then 0.2 m to 2 m in 0.2 m steps
+        const depths = [];
+        const extra = [0, 0.033, 0.05, 0.1];
+        extra.forEach(d => {
+          if (!depths.includes(d)) depths.push(d);
+        });
+        for (let d=0.2; d<=2.0001; d+=0.2) {
+          const val = parseFloat(d.toFixed(2));
+          if (!depths.includes(val)) depths.push(val);
+        }
+        depths.sort((a,b) => a - b);
+        // Compute colours and linearity
+        const colourData = computeColours(slopes, intercepts, depths, forceOriginArr);
+        const diag = computeLinearityDiagnostics(
+          slopes.map((s,i) => ({ slope: s, intercept: intercepts[i], r2: r2s[i] })),
+          [5, 10, 16] // indices correspond to 450, 500, 560 nm
+        );
+        colourData.linearity = diag;
+        // Populate internal structure for export & details
+        internalDataMap[sampleId] = {
+          wavelengths: wavelengths.slice(),
+          paths_m: paths_m.slice(),
+          A_rows: processedRows.map(r => r.slice()),
+          slope_per_m: slopes.slice(),
+          intercept: intercepts.slice(),
+          depths_m: depths.slice(),
+          results: colourData.results.map(r => ({ depth_m: r.depth_m, X: r.X, Y: r.Y, Z: r.Z, L: r.L, a: r.a, b: r.b, srgb: [Math.round(r.rgb[0]*255), Math.round(r.rgb[1]*255), Math.round(r.rgb[2]*255)] })),
+          linearity: diag,
+          details: null
+        };
+        // Build details summary
+        let detailsHTML = '';
+        detailsHTML += '<strong>Process summary</strong>';
+        detailsHTML += '<ul>';
+        detailsHTML += '<li>Number of input spectra: ' + paths_m.length + '</li>';
+        detailsHTML += '<li>Path lengths (m): ' + paths_m.map(p => p.toFixed(4)).join(', ') + '</li>';
+        if (baselineCorr) {
+          const avgMed = baselineMeds.length ? baselineMeds.reduce((a,b) => a + b, 0) / baselineMeds.length : 0;
+          detailsHTML += '<li>Baseline correction applied (median of absorbance ≥650 nm). Average baseline: ' + avgMed.toFixed(4) + '</li>';
+        }
+        if (clampNeg) {
+          detailsHTML += '<li>Negative absorbances clamped to zero.</li>';
+        }
+        detailsHTML += '<li>Beer–Lambert fit performed per wavelength using least squares';
+        if (forceOrigin) detailsHTML += ', forcing through origin';
+        detailsHTML += '. Slopes and intercepts computed.</li>';
+        detailsHTML += '<li>Absorbance extrapolated to depths: ' + depths.map(d => (d * 100).toFixed(0) + 'cm').join(', ') + '</li>';
+        detailsHTML += '<li>Transmittance calculated as T=10^(-A).</li>';
+        detailsHTML += '<li>XYZ values integrated with CIE 1964 10° functions and D65 SPD.</li>';
+        detailsHTML += '<li>Converted to L*a*b* and sRGB for display.</li>';
+        detailsHTML += '</ul>';
+        detailsHTML += '<strong>Line fit diagnostics (selected λ)</strong><ul>';
+        [450, 500, 560].forEach(wl => {
+          const i = wavelengths.indexOf(wl);
+          if (i >= 0) {
+            detailsHTML += '<li>' + wl + ' nm: slope ' + slopes[i].toExponential(3) + ', intercept ' + intercepts[i].toExponential(3) + ', R² ' + r2s[i].toFixed(3) + '</li>';
+          }
+        });
+        detailsHTML += '</ul>';
+        internalDataMap[sampleId].details = detailsHTML;
+        updateUIForSample(sampleId, colourData);
+        document.getElementById('exportBtn-' + sampleId).disabled = false;
+      } catch (err) {
+        errorDiv.textContent = err.message;
+        internalDataMap[sampleId] = null;
+        document.getElementById('exportBtn-' + sampleId).disabled = true;
+        updateUIForSample(sampleId, null);
+      }
+    }
+    // Export JSON for a specific sample
+    function exportJSONForSample(sampleId) {
+      const data = internalDataMap[sampleId];
+      if (!data) return;
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'spectro_data_' + sampleId + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+    // Create a new sample: tab and panel
+    function addSample() {
+      const id = sampleCounter++;
+      const tabsDiv = document.getElementById('tabs');
+      // Create tab button
+      const tabBtn = document.createElement('button');
+      tabBtn.textContent = 'Sample ' + (id + 1);
+      tabBtn.id = 'tab-' + id;
+      tabBtn.addEventListener('click', () => setActiveSample(id));
+      tabsDiv.insertBefore(tabBtn, document.getElementById('addTabBtn'));
+      // Create sample panel
+      const samplesDiv = document.getElementById('samples');
+      const sampleDiv = document.createElement('div');
+      sampleDiv.className = 'sample';
+      sampleDiv.id = 'sample-' + id;
+      sampleDiv.innerHTML = `
+        <div class="container">
+          <div class="panel">
+            <h2>Input</h2>
+            <textarea id="dataInput-${id}" placeholder="Paste tab/semicolon/comma-separated data here...\nHeader must include Path_mm or Path_cm and 400,410,...,700 columns."></textarea>
+            <label>Units:
+              <select id="unitSelect-${id}">
+                <option value="mm">mm</option>
+                <option value="cm">cm</option>
+              </select>
+            </label>
+            <label>Decimal separator:
+              <select id="decimalSelect-${id}">
+                <option value=".">Dot (.)</option>
+                <option value=",">Comma (,)</option>
+              </select>
+            </label>
+            <label><input type="checkbox" id="clampNeg-${id}" checked> Clamp negatives to 0</label>
+            <label><input type="checkbox" id="baselineCorr-${id}"> Baseline correction 650–700 nm</label>
+            <label><input type="checkbox" id="forceOrigin-${id}"> Force through origin</label>
+            <button id="computeBtn-${id}">Compute</button>
+            <button id="exportBtn-${id}" disabled>Export JSON</button>
+            <div id="error-${id}" class="error"></div>
+          </div>
+          <div class="panel">
+            <h2>Results</h2>
+            <div id="notice-${id}" style="color:#888;margin-bottom:0.5rem;"></div>
+            <div id="colorStrip-${id}"></div>
+            <div id="calcDetails-${id}" style="margin-top:0.5rem;font-size:0.9rem;"></div>
+            <div id="linearityWidget-${id}" style="margin-top:0.5rem;"></div>
+          </div>
+        </div>
+      `;
+      samplesDiv.appendChild(sampleDiv);
+      // Attach event listeners for compute/export
+      document.getElementById('computeBtn-' + id).addEventListener('click', () => computeResultsForSample(id));
+      document.getElementById('exportBtn-' + id).addEventListener('click', () => exportJSONForSample(id));
+      // Show this tab
+      setActiveSample(id);
+    }
+    // Set active sample/tab
+    function setActiveSample(id) {
+      const tabs = document.querySelectorAll('#tabs button');
+      tabs.forEach(btn => btn.classList.remove('active'));
+      const tabBtn = document.getElementById('tab-' + id);
+      if (tabBtn) tabBtn.classList.add('active');
+      const sampleDivs = document.querySelectorAll('#samples .sample');
+      sampleDivs.forEach(div => div.classList.remove('active'));
+      const activeDiv = document.getElementById('sample-' + id);
+      if (activeDiv) activeDiv.classList.add('active');
+    }
+    // Initialise: add "Add Sample" button and first sample
+    function init() {
+      const tabsDiv = document.getElementById('tabs');
+      const addBtn = document.createElement('button');
+      addBtn.id = 'addTabBtn';
+      addBtn.textContent = '+ Add Sample';
+      addBtn.className = 'add';
+      addBtn.addEventListener('click', addSample);
+      tabsDiv.appendChild(addBtn);
+      // Create first sample
+      addSample();
+    }
+    init();
+  </script>
+</body>
+</html>
