@@ -41,6 +41,7 @@
     }
     .tabs button.dark-toggle {
       margin-left: auto;
+      margin-right: 0;
     }
     .sample {
       display: none;
@@ -773,6 +774,14 @@
     // Initialise: add control buttons and first sample
     function init() {
       const tabsDiv = document.getElementById('tabs');
+
+      const addBtn = document.createElement('button');
+      addBtn.id = 'addTabBtn';
+      addBtn.textContent = '+ Add Sample';
+      addBtn.className = 'add';
+      addBtn.addEventListener('click', addSample);
+      tabsDiv.appendChild(addBtn);
+
       const darkBtn = document.createElement('button');
       darkBtn.id = 'darkModeToggle';
       darkBtn.textContent = 'Dark Mode';
@@ -781,13 +790,6 @@
         document.body.classList.toggle('dark-mode');
       });
       tabsDiv.appendChild(darkBtn);
-
-      const addBtn = document.createElement('button');
-      addBtn.id = 'addTabBtn';
-      addBtn.textContent = '+ Add Sample';
-      addBtn.className = 'add';
-      addBtn.addEventListener('click', addSample);
-      tabsDiv.appendChild(addBtn);
 
       // Create first sample
       addSample();
