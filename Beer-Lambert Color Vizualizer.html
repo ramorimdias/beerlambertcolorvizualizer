@@ -33,11 +33,14 @@
       color: #333;
       font-weight: bold;
     }
-    .tabs button.add {
+    .tabs button.add,
+    .tabs button.dark-toggle {
       background: #007acc;
       color: #fff;
-      margin-left: auto;
       border-radius: 4px;
+    }
+    .tabs button.dark-toggle {
+      margin-left: auto;
     }
     .sample {
       display: none;
@@ -114,7 +117,6 @@
   </style>
 </head>
 <body>
-  <button id="darkModeToggle" style="position:fixed;top:10px;right:10px;z-index:1000;">Dark Mode</button>
   <div id="app">
     <div id="tabs" class="tabs">
       <!-- Tabs will be inserted here dynamically -->
@@ -768,18 +770,25 @@
       const activeDiv = document.getElementById('sample-' + id);
       if (activeDiv) activeDiv.classList.add('active');
     }
-    // Initialise: add "Add Sample" button and first sample
+    // Initialise: add control buttons and first sample
     function init() {
       const tabsDiv = document.getElementById('tabs');
+      const darkBtn = document.createElement('button');
+      darkBtn.id = 'darkModeToggle';
+      darkBtn.textContent = 'Dark Mode';
+      darkBtn.className = 'dark-toggle';
+      darkBtn.addEventListener('click', () => {
+        document.body.classList.toggle('dark-mode');
+      });
+      tabsDiv.appendChild(darkBtn);
+
       const addBtn = document.createElement('button');
       addBtn.id = 'addTabBtn';
       addBtn.textContent = '+ Add Sample';
       addBtn.className = 'add';
       addBtn.addEventListener('click', addSample);
       tabsDiv.appendChild(addBtn);
-      document.getElementById('darkModeToggle').addEventListener('click', () => {
-        document.body.classList.toggle('dark-mode');
-      });
+
       // Create first sample
       addSample();
     }
