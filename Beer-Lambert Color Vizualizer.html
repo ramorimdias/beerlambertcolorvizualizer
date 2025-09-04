@@ -374,6 +374,60 @@
       axisY.setAttribute('x2', x0); axisY.setAttribute('y2', y1);
       axisY.setAttribute('stroke', 'currentColor');
       svg.appendChild(axisX); svg.appendChild(axisY);
+
+      // X-axis ticks and labels
+      const xTicks = [400, 500, 600, 700];
+      xTicks.forEach(wl => {
+        const j = wavelengths.indexOf(wl);
+        if (j !== -1) {
+          const x = x0 + (j / (wavelengths.length - 1)) * (width - 2 * margin);
+          const tick = document.createElementNS(svgNS, 'line');
+          tick.setAttribute('x1', x); tick.setAttribute('y1', y0);
+          tick.setAttribute('x2', x); tick.setAttribute('y2', y0 + 5);
+          tick.setAttribute('stroke', 'currentColor');
+          svg.appendChild(tick);
+          const label = document.createElementNS(svgNS, 'text');
+          label.setAttribute('x', x); label.setAttribute('y', y0 + 15);
+          label.setAttribute('text-anchor', 'middle');
+          label.setAttribute('font-size', '10');
+          label.textContent = wl;
+          svg.appendChild(label);
+        }
+      });
+
+      // Y-axis ticks and labels
+      const yTicks = [0, maxA / 2, maxA];
+      yTicks.forEach(val => {
+        const y = y0 - (val / maxA) * (height - 2 * margin);
+        const tick = document.createElementNS(svgNS, 'line');
+        tick.setAttribute('x1', x0 - 5); tick.setAttribute('y1', y);
+        tick.setAttribute('x2', x0); tick.setAttribute('y2', y);
+        tick.setAttribute('stroke', 'currentColor');
+        svg.appendChild(tick);
+        const label = document.createElementNS(svgNS, 'text');
+        label.setAttribute('x', x0 - 7); label.setAttribute('y', y + 4);
+        label.setAttribute('text-anchor', 'end');
+        label.setAttribute('font-size', '10');
+        label.textContent = val.toFixed(2);
+        svg.appendChild(label);
+      });
+
+      // Axis titles
+      const xlabel = document.createElementNS(svgNS, 'text');
+      xlabel.setAttribute('x', (x0 + x1) / 2);
+      xlabel.setAttribute('y', height - 5);
+      xlabel.setAttribute('text-anchor', 'middle');
+      xlabel.setAttribute('font-size', '12');
+      xlabel.textContent = 'Wavelength (nm)';
+      svg.appendChild(xlabel);
+      const ylabel = document.createElementNS(svgNS, 'text');
+      ylabel.setAttribute('x', 10);
+      ylabel.setAttribute('y', (y0 + y1) / 2);
+      ylabel.setAttribute('text-anchor', 'middle');
+      ylabel.setAttribute('font-size', '12');
+      ylabel.setAttribute('transform', `rotate(-90 10 ${(y0 + y1) / 2})`);
+      ylabel.textContent = 'Absorbance';
+      svg.appendChild(ylabel);
       const colors = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#a65628','#f781bf','#999999'];
       A_rows.forEach((row, idx) => {
         const pts = row.map((val, j) => {
