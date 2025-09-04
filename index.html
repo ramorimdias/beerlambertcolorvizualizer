@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <title>Beer–Lambert Color Visualizer</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
       margin: 0;
@@ -129,7 +128,6 @@
     // Map of sample ID to computed data and details
     const internalDataMap = {};
     let sampleCounter = 0;
-    const absGraphMap = {};
     // Helper: median of numeric array
     function median(values) {
       if (!values.length) return 0;
@@ -340,43 +338,12 @@
       const linearityDiv = document.getElementById('linearityWidget-' + sampleId);
       const noticeDiv = document.getElementById('notice-' + sampleId);
       const detailsDiv = document.getElementById('calcDetails-' + sampleId);
-      const nameDiv = document.getElementById('sampleNameDisplay-' + sampleId);
-      const graphCanvas = document.getElementById('absGraph-' + sampleId);
       // Clear previous content
       stripDiv.innerHTML = '';
       linearityDiv.innerHTML = '';
       noticeDiv.textContent = '';
       detailsDiv.innerHTML = '';
-      if (nameDiv) nameDiv.textContent = '';
-      if (absGraphMap[sampleId]) {
-        absGraphMap[sampleId].destroy();
-        delete absGraphMap[sampleId];
-      }
       if (!colourData || !colourData.results) return;
-      const sampleData = internalDataMap[sampleId];
-      if (sampleData && sampleData.sampleName && nameDiv) {
-        nameDiv.textContent = 'Sample name: ' + sampleData.sampleName;
-      }
-      if (sampleData && sampleData.A_rows && graphCanvas) {
-        const ctx = graphCanvas.getContext('2d');
-        const datasets = sampleData.A_rows.map((row, idx) => ({
-          label: (sampleData.paths_m[idx] * 1000).toFixed(0) + ' mm',
-          data: row,
-          fill: false
-        }));
-        absGraphMap[sampleId] = new Chart(ctx, {
-          type: 'line',
-          data: { labels: wavelengths, datasets },
-          options: {
-            responsive: true,
-            interaction: { mode: 'index', intersect: false },
-            scales: {
-              x: { title: { display: true, text: 'Wavelength (nm)' } },
-              y: { title: { display: true, text: 'Absorbance' } }
-            }
-          }
-        });
-      }
       // Build colour swatches
       const swatchContainer = document.createElement('div');
       swatchContainer.className = 'swatch-container';
@@ -440,11 +407,6 @@
       const clampNeg = document.getElementById('clampNeg-' + sampleId).checked;
       const baselineCorr = document.getElementById('baselineCorr-' + sampleId).checked;
       const forceOrigin = document.getElementById('forceOrigin-' + sampleId).checked;
-      const sampleName = document.getElementById('sampleName-' + sampleId).value.trim();
-      const tabBtn = document.getElementById('tab-' + sampleId);
-      if (tabBtn) {
-        tabBtn.textContent = sampleName || ('Sample ' + (sampleId + 1));
-      }
       const errorDiv = document.getElementById('error-' + sampleId);
       errorDiv.textContent = '';
       try {
@@ -533,8 +495,7 @@
           results: colourData.results.map(r => ({ depth_m: r.depth_m, X: r.X, Y: r.Y, Z: r.Z, L: r.L, a: r.a, b: r.b, srgb: [Math.round(r.rgb[0]*255), Math.round(r.rgb[1]*255), Math.round(r.rgb[2]*255)] })),
           linearity: diag,
           details: null,
-          reference: (refChoice === 'c2' ? 'C/2°' : 'D65/10°'),
-          sampleName: sampleName
+          reference: (refChoice === 'c2' ? 'C/2°' : 'D65/10°')
         };
         // Build details summary
         let detailsHTML = '';
@@ -613,8 +574,7 @@
         <div class="container">
           <div class="panel">
             <h2>Input</h2>
-            <label>Sample name: <input type="text" id="sampleName-${id}" placeholder="Sample name"></label>
-            <textarea id="dataInput-${id}" placeholder="Paste rows: path length followed by absorbance at 400-700 nm."></textarea>
+            <textarea id="dataInput-${id}" placeholder="Paste tab/semicolon/comma-separated data here...\nHeader must include Path_mm or Path_cm and 400,410,...,700 columns."></textarea>
             <label>Units:
               <select id="unitSelect-${id}">
                 <option value="mm">mm</option>
@@ -642,18 +602,14 @@
           </div>
           <div class="panel">
             <h2>Results</h2>
-            <div id="sampleNameDisplay-${id}" style="margin-bottom:0.5rem;"></div>
             <div id="notice-${id}" style="color:#888;margin-bottom:0.5rem;"></div>
             <div id="colorStrip-${id}"></div>
-            <canvas id="absGraph-${id}" style="max-width:100%;"></canvas>
             <div id="calcDetails-${id}" style="margin-top:0.5rem;font-size:0.9rem;"></div>
             <div id="linearityWidget-${id}" style="margin-top:0.5rem;"></div>
           </div>
         </div>
       `;
       samplesDiv.appendChild(sampleDiv);
-      const headerLine = ['Path_mm'].concat(wavelengths).join('\t');
-      document.getElementById('dataInput-' + id).value = headerLine + '\n';
       // Attach event listeners for compute/export
       document.getElementById('computeBtn-' + id).addEventListener('click', () => computeResultsForSample(id));
       document.getElementById('exportBtn-' + id).addEventListener('click', () => exportJSONForSample(id));
