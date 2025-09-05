@@ -355,7 +355,7 @@
       }
       return diag;
     }
-    function renderAbsorbanceGraph(sampleId, paths_m, A_rows) {
+    function renderAbsorbanceGraph(sampleId, A_rows) {
       const container = document.getElementById('absorbanceGraph-' + sampleId);
       if (!container) return;
       container.innerHTML = '';
@@ -446,19 +446,7 @@
         svg.appendChild(poly);
       });
       container.appendChild(svg);
-      const legend = document.createElement('div');
-      legend.style.display = 'flex';
-      legend.style.flexWrap = 'wrap';
-      legend.style.fontSize = '0.8rem';
-      legend.style.marginTop = '0.3rem';
-      paths_m.forEach((p, idx) => {
-        const item = document.createElement('div');
-        const color = colors[idx % colors.length];
-        item.innerHTML = '<span class="circle" style="background:' + color + '"></span>' + (p*1000).toFixed(0) + ' mm';
-        legend.appendChild(item);
-      });
-      container.appendChild(legend);
-    }
+      }
     // Render results for a specific sample
     function updateUIForSample(sampleId, colourData) {
       const stripDiv = document.getElementById('colorStrip-' + sampleId);
@@ -670,7 +658,7 @@
         });
         detailsHTML += '</ul>';
         internalDataMap[sampleId].details = detailsHTML;
-        renderAbsorbanceGraph(sampleId, paths_m, processedRows);
+        renderAbsorbanceGraph(sampleId, processedRows);
         updateUIForSample(sampleId, colourData);
         document.getElementById('exportBtn-' + sampleId).disabled = false;
       } catch (err) {
