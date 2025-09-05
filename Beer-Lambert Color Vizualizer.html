@@ -91,6 +91,15 @@
       border-radius: 50%;
       margin-right: 0.3rem;
     }
+    .close-sample-btn {
+      margin-top: 0.5rem;
+      background: #c00;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 0.3rem 0.6rem;
+      cursor: pointer;
+    }
     .error {
       color: red;
       font-weight: bold;
@@ -871,7 +880,8 @@
               </select>
             </label>
             <button id="computeBtn-${id}">Compute</button>
-            <button id="exportBtn-${id}" disabled>Export JSON</button>
+            <button id="exportBtn-${id}" disabled>Export JSON</button><br>
+            <button id="closeBtn-${id}" class="close-sample-btn">Close Sample</button>
             <div id="error-${id}" class="error"></div>
           </div>
           <div class="panel">
@@ -886,9 +896,10 @@
         </div>
       `;
       samplesDiv.appendChild(sampleDiv);
-      // Attach event listeners for compute/export
+      // Attach event listeners for compute/export/close
       document.getElementById('computeBtn-' + id).addEventListener('click', () => computeResultsForSample(id));
       document.getElementById('exportBtn-' + id).addEventListener('click', () => exportJSONForSample(id));
+      document.getElementById('closeBtn-' + id).addEventListener('click', () => removeSample(id));
       // Show this tab
       setActiveSample(id);
     }
@@ -902,6 +913,21 @@
       sampleDivs.forEach(div => div.classList.remove('active'));
       const activeDiv = document.getElementById('sample-' + id);
       if (activeDiv) activeDiv.classList.add('active');
+    }
+    function removeSample(id) {
+      delete internalDataMap[id];
+      const tabBtn = document.getElementById('tab-' + id);
+      const wasActive = tabBtn && tabBtn.classList.contains('active');
+      if (tabBtn) tabBtn.remove();
+      const sampleDiv = document.getElementById('sample-' + id);
+      if (sampleDiv) sampleDiv.remove();
+      if (wasActive) {
+        const remaining = document.querySelectorAll('#tabs button[id^="tab-"]');
+        if (remaining.length > 0) {
+          const newId = parseInt(remaining[0].id.split('-')[1], 10);
+          setActiveSample(newId);
+        }
+      }
     }
     // Initialise: add control buttons and first sample
     function init() {
