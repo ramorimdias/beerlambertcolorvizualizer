@@ -696,6 +696,120 @@
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }
+    // Base64 helpers for UTF-8 strings
+    function toBase64(str) {
+      return btoa(unescape(encodeURIComponent(str)));
+    }
+    function fromBase64(b64) {
+      return decodeURIComponent(escape(atob(b64)));
+    }
+    // Save current project to CSV
+    function saveProject() {
+      const sampleDivs = document.querySelectorAll('#samples .sample');
+      const activeTab = document.querySelector('#tabs button.active');
+      const activeId = activeTab ? parseInt(activeTab.id.split('-')[1]) : -1;
+      const rows = ['id,sampleName,unit,decimalSep,clampNeg,baselineCorr,forceOrigin,colorRef,active,data,internal'];
+      sampleDivs.forEach(div => {
+        const id = parseInt(div.id.split('-')[1]);
+        const name = document.getElementById('sampleName-' + id).value || '';
+        const unit = document.getElementById('unitSelect-' + id).value;
+        const dec = document.getElementById('decimalSelect-' + id).value;
+        const clampNeg = document.getElementById('clampNeg-' + id).checked;
+        const baseline = document.getElementById('baselineCorr-' + id).checked;
+        const forceOrigin = document.getElementById('forceOrigin-' + id).checked;
+        const colorRef = document.getElementById('colorRefSelect-' + id).value;
+        const dataInput = document.getElementById('dataInput-' + id).value || '';
+        const internal = internalDataMap[id] ? JSON.stringify(internalDataMap[id]) : '';
+        const dataB64 = toBase64(dataInput);
+        const internalB64 = internal ? toBase64(internal) : '';
+        const row = [
+          id,
+          JSON.stringify(name),
+          JSON.stringify(unit),
+          JSON.stringify(dec),
+          clampNeg,
+          baseline,
+          forceOrigin,
+          JSON.stringify(colorRef),
+          id === activeId ? 1 : 0,
+          JSON.stringify(dataB64),
+          JSON.stringify(internalB64)
+        ].join(',');
+        rows.push(row);
+      });
+      const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'project.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+    // Load project from CSV text
+    function loadProjectFromText(text) {
+      const lines = text.trim().split(/\r?\n/);
+      if (lines.length <= 1) return;
+      // Remove existing sample tabs
+      document.querySelectorAll('#tabs button').forEach(btn => {
+        if (btn.id && btn.id.startsWith('tab-')) btn.remove();
+      });
+      // Remove existing samples
+      document.getElementById('samples').innerHTML = '';
+      for (const key in internalDataMap) delete internalDataMap[key];
+      sampleCounter = 0;
+      let activeId = 0;
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i];
+        if (!row.trim()) continue;
+        const parts = row.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+        const [idStr, nameStr, unitStr, decStr, clampStr, baseStr, forceStr, colorStr, activeStr, dataB64Str, internalB64Str] = parts;
+        addSample();
+        const id = sampleCounter - 1;
+        document.getElementById('sampleName-' + id).value = JSON.parse(nameStr);
+        document.getElementById('unitSelect-' + id).value = JSON.parse(unitStr);
+        document.getElementById('decimalSelect-' + id).value = JSON.parse(decStr);
+        document.getElementById('clampNeg-' + id).checked = (clampStr === 'true');
+        document.getElementById('baselineCorr-' + id).checked = (baseStr === 'true');
+        document.getElementById('forceOrigin-' + id).checked = (forceStr === 'true');
+        document.getElementById('colorRefSelect-' + id).value = JSON.parse(colorStr);
+        const dataText = fromBase64(JSON.parse(dataB64Str));
+        document.getElementById('dataInput-' + id).value = dataText;
+        const internalStr = JSON.parse(internalB64Str || '""');
+        if (internalStr) {
+          const internal = JSON.parse(fromBase64(internalStr));
+          internalDataMap[id] = internal;
+          const results = internal.results ? internal.results.map(r => ({
+            depth_m: r.depth_m,
+            X: r.X,
+            Y: r.Y,
+            Z: r.Z,
+            L: r.L,
+            a: r.a,
+            b: r.b,
+            rgb: r.srgb.map(v => v / 255)
+          })) : [];
+          renderAbsorbanceGraph(id, internal.paths_m, internal.A_rows);
+          updateUIForSample(id, { results: results, linearity: internal.linearity });
+          document.getElementById('calcDetails-' + id).innerHTML = internal.details || '';
+          document.getElementById('sampleNameDisplay-' + id).textContent = internal.sampleName ? 'Sample name: ' + internal.sampleName : '';
+          document.getElementById('exportBtn-' + id).disabled = false;
+        }
+        if (parseInt(activeStr, 10) === 1) activeId = id;
+      }
+      setActiveSample(activeId);
+    }
+    function handleLoadProject(evt) {
+      const file = evt.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        loadProjectFromText(e.target.result);
+      };
+      reader.readAsText(file);
+      evt.target.value = '';
+    }
     // Create a new sample: tab and panel
     function addSample() {
       const id = sampleCounter++;
@@ -782,14 +896,38 @@
       addBtn.addEventListener('click', addSample);
       tabsDiv.appendChild(addBtn);
 
+      const saveBtn = document.createElement('button');
+      saveBtn.id = 'saveProjectBtn';
+      saveBtn.textContent = 'Save CSV';
+      saveBtn.className = 'dark-toggle';
+      saveBtn.addEventListener('click', saveProject);
+      tabsDiv.appendChild(saveBtn);
+
+      const loadBtn = document.createElement('button');
+      loadBtn.id = 'loadProjectBtn';
+      loadBtn.textContent = 'Load CSV';
+      loadBtn.className = 'dark-toggle';
+      loadBtn.style.marginLeft = '0';
+      loadBtn.addEventListener('click', () => document.getElementById('loadFileInput').click());
+      tabsDiv.appendChild(loadBtn);
+
       const darkBtn = document.createElement('button');
       darkBtn.id = 'darkModeToggle';
       darkBtn.textContent = 'Dark Mode';
       darkBtn.className = 'dark-toggle';
+      darkBtn.style.marginLeft = '0';
       darkBtn.addEventListener('click', () => {
         document.body.classList.toggle('dark-mode');
       });
       tabsDiv.appendChild(darkBtn);
+
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = '.csv';
+      fileInput.style.display = 'none';
+      fileInput.id = 'loadFileInput';
+      fileInput.addEventListener('change', handleLoadProject);
+      document.body.appendChild(fileInput);
 
       // Create first sample
       addSample();
