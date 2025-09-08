@@ -783,8 +783,9 @@
 
     // Save current project to standalone HTML
     async function saveProject() {
-      const name = prompt('Enter project name', projectName || '') || projectName || 'project';
-      projectName = name;
+      const name = prompt('Enter project name', projectName || '');
+      if (name === null) return;
+      projectName = name || projectName || 'project';
       updateProjectTitle();
       const state = collectState();
       const json = JSON.stringify(state);
