@@ -11,6 +11,10 @@
       background: #f9f9f9;
       color: #333;
     }
+    h1 {
+      text-align: center;
+      margin: 0.5rem;
+    }
     /* Tab bar styling */
     .tabs {
       display: flex;
@@ -127,6 +131,7 @@
   </style>
 </head>
 <body>
+  <h1 id="projectTitle">Beer–Lambert Color Visualizer</h1>
   <div id="app">
     <div id="tabs" class="tabs">
       <!-- Tabs will be inserted here dynamically -->
@@ -160,6 +165,18 @@
     // Map of sample ID to computed data and details
     const internalDataMap = {};
     let sampleCounter = 0;
+    let projectName = '';
+    const baseTitle = 'Beer–Lambert Color Visualizer';
+    function updateProjectTitle() {
+      const title = projectName ? projectName + ' - ' + baseTitle : baseTitle;
+      document.title = title;
+      const headerEl = document.getElementById('projectTitle');
+      if (headerEl) headerEl.textContent = title;
+    }
+    function resetProjectTitle() {
+      projectName = '';
+      updateProjectTitle();
+    }
     // Helper: median of numeric array
     function median(values) {
       if (!values.length) return 0;
@@ -712,8 +729,79 @@
     function fromBase64(b64) {
       return decodeURIComponent(escape(atob(b64)));
     }
-    // Save current project to CSV
+    // Generic download helper
+    async function downloadFile(content, suggestedName, mime) {
+      const blob = new Blob([content], { type: mime });
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: suggestedName,
+            types: [{ description: mime, accept: { [mime]: [suggestedName.slice(suggestedName.lastIndexOf('.'))] } }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return;
+        } catch (err) {
+          console.error('Save cancelled or failed', err);
+        }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = suggestedName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function collectState() {
+      const sampleDivs = document.querySelectorAll('#samples .sample');
+      const activeTab = document.querySelector('#tabs button.active');
+      const activeId = activeTab ? parseInt(activeTab.id.split('-')[1]) : -1;
+      const samples = [];
+      sampleDivs.forEach(div => {
+        const id = parseInt(div.id.split('-')[1]);
+        samples.push({
+          id,
+          name: document.getElementById('sampleName-' + id).value || '',
+          unit: document.getElementById('unitSelect-' + id).value,
+          decimalSep: document.getElementById('decimalSelect-' + id).value,
+          clampNeg: document.getElementById('clampNeg-' + id).checked,
+          baselineCorr: document.getElementById('baselineCorr-' + id).checked,
+          forceOrigin: document.getElementById('forceOrigin-' + id).checked,
+          colorRef: document.getElementById('colorRefSelect-' + id).value,
+          data: document.getElementById('dataInput-' + id).value || '',
+          internal: internalDataMap[id] || null
+        });
+      });
+      return { projectName, activeId, samples };
+    }
+
+    // Save current project to standalone HTML
     async function saveProject() {
+      const name = prompt('Enter project name', projectName || '') || projectName || 'project';
+      projectName = name;
+      updateProjectTitle();
+      const state = collectState();
+      const json = JSON.stringify(state);
+      const htmlClone = document.documentElement.cloneNode(true);
+      const existing = htmlClone.querySelector('#projectData');
+      if (existing) existing.remove();
+      const dataScript = document.createElement('script');
+      dataScript.id = 'projectData';
+      dataScript.type = 'application/json';
+      dataScript.textContent = json;
+      const scripts = htmlClone.querySelectorAll('script');
+      const mainScript = scripts[scripts.length - 1];
+      mainScript.parentNode.insertBefore(dataScript, mainScript);
+      const fullHTML = '<!DOCTYPE html>\n' + htmlClone.outerHTML;
+      await downloadFile(fullHTML, (projectName || 'project') + '.html', 'text/html');
+    }
+
+    // Export current project to CSV
+    async function exportProjectCSV() {
       const sampleDivs = document.querySelectorAll('#samples .sample');
       const activeTab = document.querySelector('#tabs button.active');
       const activeId = activeTab ? parseInt(activeTab.id.split('-')[1]) : -1;
@@ -746,43 +834,22 @@
         ].join(',');
         rows.push(row);
       });
-      const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
-      if (window.showSaveFilePicker) {
-        try {
-          const handle = await window.showSaveFilePicker({
-            suggestedName: 'project.csv',
-            types: [{ description: 'CSV Files', accept: { 'text/csv': ['.csv'] } }]
-          });
-          const writable = await handle.createWritable();
-          await writable.write(blob);
-          await writable.close();
-        } catch (err) {
-          console.error('Save cancelled or failed', err);
-        }
-      } else {
-        const name = prompt('Enter file name', 'project.csv') || 'project.csv';
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = name;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
+      await downloadFile(rows.join('\n'), 'project.csv', 'text/csv');
     }
-    // Load project from CSV text
-    function loadProjectFromText(text) {
-      const lines = text.trim().split(/\r?\n/);
-      if (lines.length <= 1) return;
-      // Remove existing sample tabs
+    function resetProject() {
       document.querySelectorAll('#tabs button').forEach(btn => {
         if (btn.id && btn.id.startsWith('tab-')) btn.remove();
       });
-      // Remove existing samples
       document.getElementById('samples').innerHTML = '';
       for (const key in internalDataMap) delete internalDataMap[key];
       sampleCounter = 0;
+    }
+    // Load project from CSV text
+    function loadProjectFromText(text) {
+      resetProjectTitle();
+      const lines = text.trim().split(/\r?\n/);
+      if (lines.length <= 1) return;
+      resetProject();
       let activeId = 0;
       for (let i = 1; i < lines.length; i++) {
         const row = lines[i];
@@ -826,6 +893,36 @@
         if (parseInt(activeStr, 10) === 1) activeId = id;
       }
       setActiveSample(activeId);
+    }
+    function loadFromJSONState(state) {
+      if (!state) return;
+      resetProject();
+      projectName = state.projectName || '';
+      updateProjectTitle();
+      state.samples.forEach(s => {
+        addSample();
+        const id = sampleCounter - 1;
+        document.getElementById('sampleName-' + id).value = s.name || '';
+        const tabBtn = document.getElementById('tab-' + id);
+        tabBtn.textContent = s.name || ('Sample ' + (id + 1));
+        document.getElementById('unitSelect-' + id).value = s.unit;
+        document.getElementById('decimalSelect-' + id).value = s.decimalSep;
+        document.getElementById('clampNeg-' + id).checked = !!s.clampNeg;
+        document.getElementById('baselineCorr-' + id).checked = !!s.baselineCorr;
+        document.getElementById('forceOrigin-' + id).checked = !!s.forceOrigin;
+        document.getElementById('colorRefSelect-' + id).value = s.colorRef;
+        document.getElementById('dataInput-' + id).value = s.data || '';
+        if (s.internal) {
+          internalDataMap[id] = s.internal;
+          const results = s.internal.results ? s.internal.results.map(r => ({ depth_m: r.depth_m, X: r.X, Y: r.Y, Z: r.Z, L: r.L, a: r.a, b: r.b, rgb: r.srgb.map(v => v / 255) })) : [];
+          renderAbsorbanceGraph(id, s.internal.paths_m, s.internal.A_rows);
+          updateUIForSample(id, { results: results, linearity: s.internal.linearity });
+          document.getElementById('calcDetails-' + id).innerHTML = s.internal.details || '';
+          document.getElementById('sampleNameDisplay-' + id).textContent = s.internal.sampleName ? 'Sample name: ' + s.internal.sampleName : '';
+          document.getElementById('exportBtn-' + id).disabled = false;
+        }
+      });
+      setActiveSample(state.activeId || 0);
     }
     function handleLoadProject(evt) {
       const file = evt.target.files[0];
@@ -930,7 +1027,7 @@
       }
     }
     // Initialise: add control buttons and first sample
-    function init() {
+    function init(initialState) {
       const tabsDiv = document.getElementById('tabs');
 
       const addBtn = document.createElement('button');
@@ -948,9 +1045,17 @@
       saveBtn.addEventListener('click', saveProject);
       tabsDiv.appendChild(saveBtn);
 
+      const exportCsvBtn = document.createElement('button');
+      exportCsvBtn.id = 'exportCsvBtn';
+      exportCsvBtn.textContent = 'Export CSV';
+      exportCsvBtn.className = 'dark-toggle';
+      exportCsvBtn.style.marginRight = '0.6rem';
+      exportCsvBtn.addEventListener('click', exportProjectCSV);
+      tabsDiv.appendChild(exportCsvBtn);
+
       const loadBtn = document.createElement('button');
       loadBtn.id = 'loadProjectBtn';
-      loadBtn.textContent = 'Load Project';
+      loadBtn.textContent = 'Load CSV';
       loadBtn.className = 'dark-toggle';
       loadBtn.style.marginLeft = '0.6rem';
       loadBtn.style.marginRight = '0.6rem';
@@ -975,10 +1080,17 @@
       fileInput.addEventListener('change', handleLoadProject);
       document.body.appendChild(fileInput);
 
-      // Create first sample
-      addSample();
+      if (initialState) {
+        loadFromJSONState(initialState);
+      } else {
+        resetProjectTitle();
+        addSample();
+      }
     }
-    init();
+    const embeddedEl = document.getElementById('projectData');
+    const embeddedState = embeddedEl ? JSON.parse(embeddedEl.textContent) : null;
+    if (embeddedEl) embeddedEl.remove();
+    init(embeddedState);
   </script>
 </body>
 </html>
