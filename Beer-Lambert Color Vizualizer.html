@@ -722,10 +722,6 @@
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }
-    // Base64 helpers for UTF-8 strings
-    function toBase64(str) {
-      return btoa(unescape(encodeURIComponent(str)));
-    }
     // Generic download helper
     async function downloadFile(content, suggestedName, mime) {
       const blob = new Blob([content], { type: mime });
@@ -788,43 +784,6 @@
       mainScript.parentNode.insertBefore(dataScript, mainScript);
       const fullHTML = '<!DOCTYPE html>\n' + htmlClone.outerHTML;
       await downloadFile(fullHTML, (projectName || 'project') + '.html', 'text/html');
-    }
-
-    // Export current project to CSV
-    async function exportProjectCSV() {
-      const sampleDivs = document.querySelectorAll('#samples .sample');
-      const activeTab = document.querySelector('#tabs button.active');
-      const activeId = activeTab ? parseInt(activeTab.id.split('-')[1]) : -1;
-      const rows = ['id,sampleName,unit,decimalSep,clampNeg,baselineCorr,forceOrigin,colorRef,active,data,internal'];
-      sampleDivs.forEach(div => {
-        const id = parseInt(div.id.split('-')[1]);
-        const name = document.getElementById('sampleName-' + id).value || '';
-        const unit = document.getElementById('unitSelect-' + id).value;
-        const dec = document.getElementById('decimalSelect-' + id).value;
-        const clampNeg = document.getElementById('clampNeg-' + id).checked;
-        const baseline = document.getElementById('baselineCorr-' + id).checked;
-        const forceOrigin = document.getElementById('forceOrigin-' + id).checked;
-        const colorRef = document.getElementById('colorRefSelect-' + id).value;
-        const dataInput = document.getElementById('dataInput-' + id).value || '';
-        const internal = internalDataMap[id] ? JSON.stringify(internalDataMap[id]) : '';
-        const dataB64 = toBase64(dataInput);
-        const internalB64 = internal ? toBase64(internal) : '';
-        const row = [
-          id,
-          JSON.stringify(name),
-          JSON.stringify(unit),
-          JSON.stringify(dec),
-          clampNeg,
-          baseline,
-          forceOrigin,
-          JSON.stringify(colorRef),
-          id === activeId ? 1 : 0,
-          JSON.stringify(dataB64),
-          JSON.stringify(internalB64)
-        ].join(',');
-        rows.push(row);
-      });
-      await downloadFile(rows.join('\n'), 'project.csv', 'text/csv');
     }
     function resetProject() {
       document.querySelectorAll('#tabs button').forEach(btn => {
@@ -976,21 +935,11 @@
         saveBtn.id = 'saveProjectBtn';
         saveBtn.textContent = 'Save Project';
         saveBtn.className = 'dark-toggle';
+        saveBtn.style.marginLeft = '0';
         saveBtn.style.marginRight = '0.6rem';
         tabsDiv.appendChild(saveBtn);
       }
       saveBtn.addEventListener('click', saveProject);
-
-      let exportCsvBtn = document.getElementById('exportCsvBtn');
-      if (!exportCsvBtn) {
-        exportCsvBtn = document.createElement('button');
-        exportCsvBtn.id = 'exportCsvBtn';
-        exportCsvBtn.textContent = 'Export CSV';
-        exportCsvBtn.className = 'dark-toggle';
-        exportCsvBtn.style.marginRight = '0.6rem';
-        tabsDiv.appendChild(exportCsvBtn);
-      }
-      exportCsvBtn.addEventListener('click', exportProjectCSV);
 
       let darkBtn = document.getElementById('darkModeToggle');
       if (!darkBtn) {
