@@ -725,6 +725,20 @@
     // Generic download helper
     async function downloadFile(content, suggestedName, mime) {
       const blob = new Blob([content], { type: mime });
+
+      // Fallback that uses a temporary anchor element to trigger a download
+      const anchorFallback = () => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = suggestedName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        // Revoke the object URL after the click to free memory
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      };
+
       if (window.showSaveFilePicker) {
         try {
           const handle = await window.showSaveFilePicker({
@@ -735,10 +749,12 @@
           await writable.write(blob);
           await writable.close();
         } catch (err) {
-          console.error('Save cancelled or failed', err);
+          console.error('Save cancelled or failed, falling back to anchor download', err);
+          anchorFallback();
         }
       } else {
-        alert('File saving is not supported in this browser.');
+        // If the File System Access API is unavailable, immediately fall back
+        anchorFallback();
       }
     }
 
@@ -767,8 +783,9 @@
 
     // Save current project to standalone HTML
     async function saveProject() {
-      const name = prompt('Enter project name', projectName || '') || projectName || 'project';
-      projectName = name;
+      const name = prompt('Enter project name', projectName || '');
+      if (name === null) return;
+      projectName = name || projectName || 'project';
       updateProjectTitle();
       const state = collectState();
       const json = JSON.stringify(state);
