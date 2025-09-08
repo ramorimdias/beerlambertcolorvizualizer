@@ -163,12 +163,62 @@
     const zBar2 = [0.06785001,0.2074,0.6456,1.3856,1.74706,1.77211,1.6692,1.28764,0.8129501,0.46518,0.272,0.1582,0.07824999,0.04216,0.0203,0.008749999,0.0039,0.0021,0.001650001,0.0011,0.0008,0.00034,0.00019,0.00005,0.00002,0,0,0,0,0,0];
     const sc = [63.3,80.6,98.1,112.4,121.5,124.0,123.1,123.8,123.9,120.7,112.1,102.3,96.9,98.0,102.1,105.2,105.3,102.3,97.8,93.2,89.7,88.4,88.1,88.0,87.8,88.2,87.9,86.3,84.0,80.2,76.3];
     // Map of sample ID to computed data and details
+    const translations = {
+      en: {
+        title: 'Beer–Lambert Color Visualizer',
+        addSample: '+ Add Sample',
+        saveProject: 'Save Project',
+        darkMode: 'Dark Mode',
+        sampleTab: 'Sample',
+        inputHeading: 'Input',
+        sampleNameLabel: 'Sample name:',
+        dataPlaceholder: 'Paste rows: path length (mm) followed by absorbances 400–700 nm.',
+        unitsLabel: 'Units:',
+        decimalLabel: 'Decimal separator:',
+        clampNegativesLabel: 'Clamp negatives to 0',
+        baselineCorrLabel: 'Baseline correction 650–700 nm',
+        forceOriginLabel: 'Force through origin',
+        colorReferenceLabel: 'Color reference:',
+        computeBtn: 'Compute',
+        exportBtn: 'Export JSON',
+        closeSampleBtn: 'Close Sample',
+        resultsHeading: 'Results',
+        dotOption: 'Dot (.)',
+        commaOption: 'Comma (,)' 
+      },
+      fr: {
+        title: 'Visualisateur de couleur Beer–Lambert',
+        addSample: '+ Ajouter un échantillon',
+        saveProject: 'Sauvegarder le projet',
+        darkMode: 'Mode sombre',
+        sampleTab: 'Échantillon',
+        inputHeading: 'Entrée',
+        sampleNameLabel: 'Nom de l\'échantillon :',
+        dataPlaceholder: 'Coller les lignes : longueur de trajet (mm) suivie des absorbances 400–700 nm.',
+        unitsLabel: 'Unités :',
+        decimalLabel: 'Séparateur décimal :',
+        clampNegativesLabel: 'Limiter les négatifs à 0',
+        baselineCorrLabel: 'Correction de ligne de base 650–700 nm',
+        forceOriginLabel: 'Forcer à l\'origine',
+        colorReferenceLabel: 'Référence de couleur :',
+        computeBtn: 'Calculer',
+        exportBtn: 'Exporter JSON',
+        closeSampleBtn: 'Fermer l\'échantillon',
+        resultsHeading: 'Résultats',
+        dotOption: 'Point (.)',
+        commaOption: 'Virgule (,)' 
+      }
+    };
+    let currentLang = 'en';
+    function t(key) {
+      return translations[currentLang][key] || key;
+    }
     const internalDataMap = {};
     let sampleCounter = 0;
     let projectName = '';
-    const baseTitle = 'Beer–Lambert Color Visualizer';
     function updateProjectTitle() {
-      const title = projectName ? projectName + ' - ' + baseTitle : baseTitle;
+      const base = t('title');
+      const title = projectName ? projectName + ' - ' + base : base;
       document.title = title;
       const headerEl = document.getElementById('projectTitle');
       if (headerEl) headerEl.textContent = title;
@@ -176,6 +226,34 @@
     function resetProjectTitle() {
       projectName = '';
       updateProjectTitle();
+    }
+    function applyTranslations() {
+      updateProjectTitle();
+      const addBtn = document.getElementById('addTabBtn');
+      if (addBtn) addBtn.textContent = t('addSample');
+      const saveBtn = document.getElementById('saveProjectBtn');
+      if (saveBtn) saveBtn.textContent = t('saveProject');
+      const darkBtn = document.getElementById('darkModeToggle');
+      if (darkBtn) darkBtn.textContent = t('darkMode');
+      const langBtn = document.getElementById('langToggle');
+      if (langBtn) langBtn.textContent = currentLang === 'en' ? 'FR' : 'EN';
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        el.textContent = t(key);
+      });
+      document.querySelectorAll('textarea[data-i18n-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        el.placeholder = t(key);
+      });
+      document.querySelectorAll('[data-i18n-option]').forEach(opt => {
+        const key = opt.getAttribute('data-i18n-option');
+        opt.textContent = t(key);
+      });
+      document.querySelectorAll('#tabs button[id^="tab-"]').forEach(btn => {
+        const idx = parseInt(btn.id.split('-')[1], 10);
+        btn.textContent = t('sampleTab') + ' ' + (idx + 1);
+      });
+      document.documentElement.lang = currentLang;
     }
     // Helper: median of numeric array
     function median(values) {
@@ -563,8 +641,8 @@
       const errorDiv = document.getElementById('error-' + sampleId);
       const name = document.getElementById('sampleName-' + sampleId).value.trim();
       const tabBtn = document.getElementById('tab-' + sampleId);
-      if (name) tabBtn.textContent = name; else tabBtn.textContent = 'Sample ' + (sampleId + 1);
-      document.getElementById('sampleNameDisplay-' + sampleId).textContent = name ? 'Sample name: ' + name : '';
+        if (name) tabBtn.textContent = name; else tabBtn.textContent = t('sampleTab') + ' ' + (sampleId + 1);
+      document.getElementById('sampleNameDisplay-' + sampleId).textContent = name ? t('sampleNameLabel') + ' ' + name : '';
       errorDiv.textContent = '';
       if (!/path/i.test(inputText.split(/\r?\n/)[0])) {
         const lines = inputText.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
@@ -803,7 +881,7 @@
         const id = sampleCounter - 1;
         document.getElementById('sampleName-' + id).value = s.name || '';
         const tabBtn = document.getElementById('tab-' + id);
-        tabBtn.textContent = s.name || ('Sample ' + (id + 1));
+        tabBtn.textContent = s.name || (t('sampleTab') + ' ' + (id + 1));
         document.getElementById('unitSelect-' + id).value = s.unit;
         document.getElementById('decimalSelect-' + id).value = s.decimalSep;
         document.getElementById('clampNeg-' + id).checked = !!s.clampNeg;
@@ -817,11 +895,12 @@
           renderAbsorbanceGraph(id, s.internal.paths_m, s.internal.A_rows);
           updateUIForSample(id, { results: results, linearity: s.internal.linearity });
           document.getElementById('calcDetails-' + id).innerHTML = s.internal.details || '';
-          document.getElementById('sampleNameDisplay-' + id).textContent = s.internal.sampleName ? 'Sample name: ' + s.internal.sampleName : '';
+          document.getElementById('sampleNameDisplay-' + id).textContent = s.internal.sampleName ? t('sampleNameLabel') + ' ' + s.internal.sampleName : '';
           document.getElementById('exportBtn-' + id).disabled = false;
         }
       });
       setActiveSample(state.activeId || 0);
+      applyTranslations();
     }
     // Create a new sample: tab and panel
     function addSample() {
@@ -829,7 +908,7 @@
       const tabsDiv = document.getElementById('tabs');
       // Create tab button
       const tabBtn = document.createElement('button');
-      tabBtn.textContent = 'Sample ' + (id + 1);
+      tabBtn.textContent = t('sampleTab') + ' ' + (id + 1);
       tabBtn.id = 'tab-' + id;
       tabBtn.addEventListener('click', () => setActiveSample(id));
       tabsDiv.insertBefore(tabBtn, document.getElementById('addTabBtn'));
@@ -841,37 +920,37 @@
       sampleDiv.innerHTML = `
         <div class="container">
           <div class="panel">
-            <h2>Input</h2>
-            <label>Sample name: <input type="text" id="sampleName-${id}"></label>
-            <textarea id="dataInput-${id}" placeholder="Paste rows: path length (mm) followed by absorbances 400–700 nm."></textarea>
-            <label>Units:
+            <h2 data-i18n="inputHeading">${t('inputHeading')}</h2>
+            <label data-i18n="sampleNameLabel">${t('sampleNameLabel')} <input type="text" id="sampleName-${id}"></label>
+            <textarea id="dataInput-${id}" data-i18n-placeholder="dataPlaceholder" placeholder="${t('dataPlaceholder')}"></textarea>
+            <label data-i18n="unitsLabel">${t('unitsLabel')}
               <select id="unitSelect-${id}">
                 <option value="mm">mm</option>
                 <option value="cm">cm</option>
               </select>
             </label>
-            <label>Decimal separator:
+            <label data-i18n="decimalLabel">${t('decimalLabel')}
               <select id="decimalSelect-${id}">
-                <option value=".">Dot (.)</option>
-                <option value="," selected>Comma (,)</option>
+                <option value="." data-i18n-option="dotOption">${t('dotOption')}</option>
+                <option value="," selected data-i18n-option="commaOption">${t('commaOption')}</option>
               </select>
             </label>
-            <label><input type="checkbox" id="clampNeg-${id}" checked> Clamp negatives to 0</label>
-            <label><input type="checkbox" id="baselineCorr-${id}"> Baseline correction 650–700 nm</label>
-            <label><input type="checkbox" id="forceOrigin-${id}"> Force through origin</label><br>
-            <label>Color reference:
+            <label data-i18n="clampNegativesLabel"><input type="checkbox" id="clampNeg-${id}" checked> ${t('clampNegativesLabel')}</label>
+            <label data-i18n="baselineCorrLabel"><input type="checkbox" id="baselineCorr-${id}"> ${t('baselineCorrLabel')}</label>
+            <label data-i18n="forceOriginLabel"><input type="checkbox" id="forceOrigin-${id}"> ${t('forceOriginLabel')}</label><br>
+            <label data-i18n="colorReferenceLabel">${t('colorReferenceLabel')}
               <select id="colorRefSelect-${id}">
                 <option value="d65">D65 / 10°</option>
                 <option value="c2" selected>C / 2°</option>
               </select>
             </label>
-            <button id="computeBtn-${id}">Compute</button>
-            <button id="exportBtn-${id}" disabled>Export JSON</button><br>
-            <button id="closeBtn-${id}" class="close-sample-btn">Close Sample</button>
+            <button id="computeBtn-${id}" data-i18n="computeBtn">${t('computeBtn')}</button>
+            <button id="exportBtn-${id}" disabled data-i18n="exportBtn">${t('exportBtn')}</button><br>
+            <button id="closeBtn-${id}" class="close-sample-btn" data-i18n="closeSampleBtn">${t('closeSampleBtn')}</button>
             <div id="error-${id}" class="error"></div>
           </div>
           <div class="panel">
-            <h2>Results</h2>
+            <h2 data-i18n="resultsHeading">${t('resultsHeading')}</h2>
             <div id="sampleNameDisplay-${id}" style="font-weight:bold;margin-bottom:0.5rem;"></div>
             <div id="notice-${id}" style="color:#888;margin-bottom:0.5rem;"></div>
             <div id="colorStrip-${id}"></div>
@@ -886,6 +965,7 @@
       document.getElementById('computeBtn-' + id).addEventListener('click', () => computeResultsForSample(id));
       document.getElementById('exportBtn-' + id).addEventListener('click', () => exportJSONForSample(id));
       document.getElementById('closeBtn-' + id).addEventListener('click', () => removeSample(id));
+      applyTranslations();
       // Show this tab
       setActiveSample(id);
     }
@@ -923,7 +1003,6 @@
       if (!addBtn) {
         addBtn = document.createElement('button');
         addBtn.id = 'addTabBtn';
-        addBtn.textContent = '+ Add Sample';
         addBtn.className = 'add';
         tabsDiv.appendChild(addBtn);
       }
@@ -933,7 +1012,6 @@
       if (!saveBtn) {
         saveBtn = document.createElement('button');
         saveBtn.id = 'saveProjectBtn';
-        saveBtn.textContent = 'Save Project';
         saveBtn.className = 'dark-toggle';
         saveBtn.style.marginLeft = 'auto';
         saveBtn.style.marginRight = '0.6rem';
@@ -945,7 +1023,6 @@
       if (!darkBtn) {
         darkBtn = document.createElement('button');
         darkBtn.id = 'darkModeToggle';
-        darkBtn.textContent = 'Dark Mode';
         darkBtn.className = 'dark-toggle';
         darkBtn.style.marginLeft = '0';
         tabsDiv.appendChild(darkBtn);
@@ -954,12 +1031,26 @@
         document.body.classList.toggle('dark-mode');
       });
 
+      let langBtn = document.getElementById('langToggle');
+      if (!langBtn) {
+        langBtn = document.createElement('button');
+        langBtn.id = 'langToggle';
+        langBtn.className = 'dark-toggle';
+        langBtn.style.marginLeft = '0';
+        tabsDiv.appendChild(langBtn);
+      }
+      langBtn.addEventListener('click', () => {
+        currentLang = currentLang === 'en' ? 'fr' : 'en';
+        applyTranslations();
+      });
+
       if (initialState) {
         loadFromJSONState(initialState);
       } else {
         resetProjectTitle();
         addSample();
       }
+      applyTranslations();
     }
     const embeddedEl = document.getElementById('projectData');
     const embeddedState = embeddedEl ? JSON.parse(embeddedEl.textContent) : null;
