@@ -760,7 +760,11 @@
           await writable.close();
           return handle.name;
         } catch (err) {
-          console.error('Save cancelled or failed, falling back to anchor download', err);
+          if (err && err.name === 'AbortError') {
+            console.warn('Save cancelled by user');
+            return null;
+          }
+          console.error('Save failed, falling back to anchor download', err);
           return anchorFallback();
         }
       } else {
