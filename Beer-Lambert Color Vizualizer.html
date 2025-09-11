@@ -88,6 +88,20 @@
       border-radius: 4px;
       box-sizing: border-box;
     }
+    .compare-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    .compare-label {
+      width: 120px;
+      font-weight: bold;
+      margin-right: 0.5rem;
+    }
+    .compare-row .swatch-container {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+    }
     .circle {
       display: inline-block;
       width: 10px;
@@ -519,9 +533,13 @@
         const Yperc = res.Y.toFixed(1);
         const [r, g, b] = res.rgb;
         const textColor = (res.Y / 100) > 0.5 ? '#000' : '#fff';
-        div.style.backgroundColor = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+        const r255 = Math.round(r * 255);
+        const g255 = Math.round(g * 255);
+        const b255 = Math.round(b * 255);
+        const hex = '#' + [r255, g255, b255].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+        div.style.backgroundColor = `rgb(${r255},${g255},${b255})`;
         div.style.color = textColor;
-        div.innerHTML = `<strong>${depthCm}&nbsp;cm</strong><br>L* ${Lval}<br>a* ${aval}<br>b* ${bval}<br>Y ${Yperc}%`;
+        div.innerHTML = `<strong>${depthCm}&nbsp;cm</strong><br>L* ${Lval}<br>a* ${aval}<br>b* ${bval}<br>Y ${Yperc}%<br>${hex}`;
         swatchContainer.appendChild(div);
       });
       stripDiv.appendChild(swatchContainer);
@@ -560,6 +578,62 @@
       if (sampleData && sampleData.details) {
         detailsDiv.innerHTML = sampleData.details;
       }
+    }
+
+    function ensureComparePanel() {
+      let compareDiv = document.getElementById('comparePanel');
+      if (!compareDiv) {
+        const samplesDiv = document.getElementById('samples');
+        compareDiv = document.createElement('div');
+        compareDiv.id = 'comparePanel';
+        compareDiv.className = 'sample';
+        compareDiv.innerHTML = `
+          <div class="panel">
+            <h2>Compare Samples</h2>
+            <div id="compareContent"></div>
+          </div>`;
+        samplesDiv.appendChild(compareDiv);
+      }
+    }
+
+    function updateCompareView() {
+      ensureComparePanel();
+      const compareContent = document.getElementById('compareContent');
+      if (!compareContent) return;
+      compareContent.innerHTML = '';
+      const entries = Object.entries(internalDataMap).filter(([id, data]) => data && data.results && data.results.length);
+      if (entries.length === 0) {
+        compareContent.textContent = 'No samples to compare.';
+        return;
+      }
+      entries.forEach(([id, data]) => {
+        const row = document.createElement('div');
+        row.className = 'compare-row';
+        const label = document.createElement('div');
+        label.className = 'compare-label';
+        label.textContent = data.sampleName || ('Sample ' + (parseInt(id, 10) + 1));
+        row.appendChild(label);
+        const swatchRow = document.createElement('div');
+        swatchRow.className = 'swatch-container';
+        data.results.forEach(res => {
+          const div = document.createElement('div');
+          div.className = 'swatch';
+          const depthCm = (res.depth_m * 100).toFixed(0);
+          const Lval = res.L.toFixed(1);
+          const aval = res.a.toFixed(1);
+          const bval = res.b.toFixed(1);
+          const Yperc = res.Y.toFixed(1);
+          const [r, g, b] = res.srgb;
+          const textColor = (res.Y / 100) > 0.5 ? '#000' : '#fff';
+          const hex = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+          div.style.backgroundColor = `rgb(${r},${g},${b})`;
+          div.style.color = textColor;
+          div.innerHTML = `<strong>${depthCm}&nbsp;cm</strong><br>L* ${Lval}<br>a* ${aval}<br>b* ${bval}<br>Y ${Yperc}%<br>${hex}`;
+          swatchRow.appendChild(div);
+        });
+        row.appendChild(swatchRow);
+        compareContent.appendChild(row);
+      });
     }
     // Perform computation for a specific sample
     function computeResultsForSample(sampleId) {
@@ -708,6 +782,7 @@
         renderAbsorbanceGraph(sampleId, paths_m, processedRows);
         updateUIForSample(sampleId, colourData);
         document.getElementById('exportBtn-' + sampleId).disabled = false;
+        updateCompareView();
       } catch (err) {
         errorDiv.textContent = err.message;
         internalDataMap[sampleId] = null;
@@ -715,6 +790,7 @@
         document.getElementById('absorbanceGraph-' + sampleId).innerHTML = '';
         document.getElementById('sampleNameDisplay-' + sampleId).textContent = '';
         updateUIForSample(sampleId, null);
+        updateCompareView();
       }
     }
     // Export JSON for a specific sample
@@ -776,9 +852,13 @@
     function collectState() {
       const sampleDivs = document.querySelectorAll('#samples .sample');
       const activeTab = document.querySelector('#tabs button.active');
-      const activeId = activeTab ? parseInt(activeTab.id.split('-')[1]) : -1;
+      let activeId;
+      if (activeTab && activeTab.id === 'compareTabBtn') activeId = 'compare';
+      else if (activeTab && activeTab.id.startsWith('tab-')) activeId = parseInt(activeTab.id.split('-')[1], 10);
+      else activeId = 0;
       const samples = [];
       sampleDivs.forEach(div => {
+        if (!div.id.startsWith('sample-')) return;
         const id = parseInt(div.id.split('-')[1]);
         samples.push({
           id,
@@ -829,6 +909,7 @@
     function loadFromJSONState(state) {
       if (!state) return;
       resetProject();
+      ensureComparePanel();
       projectName = state.projectName || '';
       updateProjectTitle();
       state.samples.forEach(s => {
@@ -854,7 +935,9 @@
           document.getElementById('exportBtn-' + id).disabled = false;
         }
       });
-      setActiveSample(state.activeId || 0);
+      updateCompareView();
+      if (state.activeId === 'compare') setActiveSample('compare');
+      else setActiveSample(state.activeId || 0);
     }
     // Create a new sample: tab and panel
     function addSample() {
@@ -914,7 +997,9 @@
           </div>
         </div>
       `;
-      samplesDiv.appendChild(sampleDiv);
+      const comparePanel = document.getElementById('comparePanel');
+      if (comparePanel) samplesDiv.insertBefore(sampleDiv, comparePanel);
+      else samplesDiv.appendChild(sampleDiv);
       // Attach event listeners for compute/export/close
       document.getElementById('computeBtn-' + id).addEventListener('click', () => computeResultsForSample(id));
       document.getElementById('exportBtn-' + id).addEventListener('click', () => exportJSONForSample(id));
@@ -928,12 +1013,19 @@
     function setActiveSample(id) {
       const tabs = document.querySelectorAll('#tabs button');
       tabs.forEach(btn => btn.classList.remove('active'));
-      const tabBtn = document.getElementById('tab-' + id);
+      let tabBtn;
+      if (id === 'compare') tabBtn = document.getElementById('compareTabBtn');
+      else tabBtn = document.getElementById('tab-' + id);
       if (tabBtn) tabBtn.classList.add('active');
       const sampleDivs = document.querySelectorAll('#samples .sample');
       sampleDivs.forEach(div => div.classList.remove('active'));
-      const activeDiv = document.getElementById('sample-' + id);
-      if (activeDiv) activeDiv.classList.add('active');
+      if (id === 'compare') {
+        const compareDiv = document.getElementById('comparePanel');
+        if (compareDiv) compareDiv.classList.add('active');
+      } else {
+        const activeDiv = document.getElementById('sample-' + id);
+        if (activeDiv) activeDiv.classList.add('active');
+      }
     }
     function removeSample(id) {
       delete internalDataMap[id];
@@ -947,8 +1039,11 @@
         if (remaining.length > 0) {
           const newId = parseInt(remaining[0].id.split('-')[1], 10);
           setActiveSample(newId);
+        } else {
+          setActiveSample('compare');
         }
       }
+      updateCompareView();
     }
     // Initialise: add control buttons and first sample
     function init(initialState) {
@@ -964,30 +1059,43 @@
       }
       addBtn.addEventListener('click', addSample);
 
-      let saveBtn = document.getElementById('saveProjectBtn');
-      if (!saveBtn) {
-        saveBtn = document.createElement('button');
-        saveBtn.id = 'saveProjectBtn';
-        saveBtn.textContent = 'Save Project';
-        saveBtn.className = 'dark-toggle';
-        saveBtn.style.marginLeft = 'auto';
-        saveBtn.style.marginRight = '0.6rem';
-        tabsDiv.appendChild(saveBtn);
-      }
-      saveBtn.addEventListener('click', saveProject);
-
       let darkBtn = document.getElementById('darkModeToggle');
       if (!darkBtn) {
         darkBtn = document.createElement('button');
         darkBtn.id = 'darkModeToggle';
         darkBtn.textContent = 'Dark Mode';
         darkBtn.className = 'dark-toggle';
-        darkBtn.style.marginLeft = '0';
+        darkBtn.style.marginLeft = 'auto';
         tabsDiv.appendChild(darkBtn);
       }
       darkBtn.addEventListener('click', () => {
         document.body.classList.toggle('dark-mode');
       });
+
+      let compareBtn = document.getElementById('compareTabBtn');
+      if (!compareBtn) {
+        compareBtn = document.createElement('button');
+        compareBtn.id = 'compareTabBtn';
+        compareBtn.textContent = 'Compare';
+        compareBtn.className = 'dark-toggle';
+        compareBtn.style.marginLeft = '0.5rem';
+        tabsDiv.appendChild(compareBtn);
+      }
+      compareBtn.addEventListener('click', () => setActiveSample('compare'));
+
+      let saveBtn = document.getElementById('saveProjectBtn');
+      if (!saveBtn) {
+        saveBtn = document.createElement('button');
+        saveBtn.id = 'saveProjectBtn';
+        saveBtn.textContent = 'Save Project';
+        saveBtn.className = 'dark-toggle';
+        saveBtn.style.marginLeft = '0.5rem';
+        saveBtn.style.marginRight = '0.6rem';
+        tabsDiv.appendChild(saveBtn);
+      }
+      saveBtn.addEventListener('click', saveProject);
+
+      ensureComparePanel();
 
       if (initialState) {
         loadFromJSONState(initialState);
@@ -995,6 +1103,7 @@
         resetProjectTitle();
         addSample();
       }
+      updateCompareView();
     }
     const embeddedEl = document.getElementById('projectData');
     const embeddedState = embeddedEl ? JSON.parse(embeddedEl.textContent) : null;
