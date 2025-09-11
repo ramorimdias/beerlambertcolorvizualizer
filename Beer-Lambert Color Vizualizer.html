@@ -104,6 +104,15 @@
       padding: 0.3rem 0.6rem;
       cursor: pointer;
     }
+    .compute-btn {
+      margin-top: 0.5rem;
+      background: #0c0;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 0.3rem 0.6rem;
+      cursor: pointer;
+    }
     .error {
       color: red;
       font-weight: bold;
@@ -737,6 +746,7 @@
         document.body.removeChild(a);
         // Revoke the object URL after the click to free memory
         setTimeout(() => URL.revokeObjectURL(url), 0);
+        return null;
       };
 
       if (window.showSaveFilePicker) {
@@ -748,13 +758,18 @@
           const writable = await handle.createWritable();
           await writable.write(blob);
           await writable.close();
+          return handle.name;
         } catch (err) {
-          console.error('Save cancelled or failed, falling back to anchor download', err);
-          anchorFallback();
+          if (err && err.name === 'AbortError') {
+            console.warn('Save cancelled by user');
+            return null;
+          }
+          console.error('Save failed, falling back to anchor download', err);
+          return anchorFallback();
         }
       } else {
         // If the File System Access API is unavailable, immediately fall back
-        anchorFallback();
+        return anchorFallback();
       }
     }
 
@@ -783,10 +798,6 @@
 
     // Save current project to standalone HTML
     async function saveProject() {
-      const name = prompt('Enter project name', projectName || '');
-      if (name === null) return;
-      projectName = name || projectName || 'project';
-      updateProjectTitle();
       const state = collectState();
       const json = JSON.stringify(state);
       const htmlClone = document.documentElement.cloneNode(true);
@@ -800,7 +811,12 @@
       const mainScript = scripts[scripts.length - 1];
       mainScript.parentNode.insertBefore(dataScript, mainScript);
       const fullHTML = '<!DOCTYPE html>\n' + htmlClone.outerHTML;
-      await downloadFile(fullHTML, (projectName || 'project') + '.html', 'text/html');
+      const suggested = (projectName || 'project') + '.html';
+      const savedName = await downloadFile(fullHTML, suggested, 'text/html');
+      if (savedName) {
+        projectName = savedName.replace(/\.html$/i, '');
+        updateProjectTitle();
+      }
     }
     function resetProject() {
       document.querySelectorAll('#tabs button').forEach(btn => {
@@ -882,8 +898,8 @@
                 <option value="c2" selected>C / 2°</option>
               </select>
             </label>
-            <button id="computeBtn-${id}">Compute</button>
             <button id="exportBtn-${id}" disabled>Export JSON</button><br>
+            <button id="computeBtn-${id}" class="compute-btn">Compute</button><br>
             <button id="closeBtn-${id}" class="close-sample-btn">Close Sample</button>
             <div id="error-${id}" class="error"></div>
           </div>
@@ -902,7 +918,9 @@
       // Attach event listeners for compute/export/close
       document.getElementById('computeBtn-' + id).addEventListener('click', () => computeResultsForSample(id));
       document.getElementById('exportBtn-' + id).addEventListener('click', () => exportJSONForSample(id));
-      document.getElementById('closeBtn-' + id).addEventListener('click', () => removeSample(id));
+      document.getElementById('closeBtn-' + id).addEventListener('click', () => {
+        if (confirm('Close this sample?')) removeSample(id);
+      });
       // Show this tab
       setActiveSample(id);
     }
